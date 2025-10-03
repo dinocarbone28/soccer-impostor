@@ -9,11 +9,8 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-
-// --- Serve static files ---
-app.use(express.static(path.join(__dirname, "public")));
-app.get("/", (_, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+server.listen(PORT, () => {
+  console.log(`Soccer Impostor running on port ${PORT}`);
 });
 
 // --- Sanitized player pool (ASCII only; accents/quotes removed) ---
