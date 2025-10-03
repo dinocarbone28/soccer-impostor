@@ -9,8 +9,6 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Soccer Impostor running on port ${PORT}`);
 });
 
 // --- Sanitized player pool (ASCII only; accents/quotes removed) ---
