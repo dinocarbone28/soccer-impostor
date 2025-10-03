@@ -1,5 +1,3 @@
-cd ~/Desktop/soccer-impostor
-cat > server.js << 'EOF'
 // server.js (CommonJS) — Express + Socket.IO
 const path = require("path");
 const express = require("express");
@@ -49,28 +47,10 @@ const PLAYER_POOL = [
 ];
 
 // --- In-memory game state ---
-/*
-rooms = {
-  CODE: {
-    code,
-    hostId,
-    maxPlayers,
-    status: 'lobby'|'describing'|'voting'|'finalGuess'|'ended',
-    round: 0,
-    maxRounds: 3,
-    secretPlayer,
-    players: {
-      socketId: { id, name, isHost, isImpostor }
-    },
-    submissions: { [roundNumber]: { socketId: "text" } },
-    votes: { socketId: targetSocketId }
-  }
-}
-*/
 const rooms = {};
 
 function generateRoomCode() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/1/0 to avoid confusion
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
   do {
     code = Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
@@ -78,9 +58,7 @@ function generateRoomCode() {
   return code;
 }
 
-function getRoom(code) {
-  return rooms[code];
-}
+function getRoom(code) { return rooms[code]; }
 
 function roomPlayerList(room) {
   return Object.values(room.players).map(p => ({ id: p.id, name: p.name, isHost: !!p.isHost }));
@@ -98,10 +76,8 @@ function startGame(room) {
   const playerIds = Object.keys(room.players);
   if (playerIds.length < 3) return { ok: false, error: "Need at least 3 players." };
 
-  // Pick secret
   room.secretPlayer = PLAYER_POOL[Math.floor(Math.random() * PLAYER_POOL.length)];
 
-  // Assign impostor
   const impostorId = playerIds[Math.floor(Math.random() * playerIds.length)];
   for (const id of playerIds) {
     room.players[id].isImpostor = (id === impostorId);
@@ -113,7 +89,6 @@ function startGame(room) {
   room.submissions = {};
   room.votes = {};
 
-  // Tell each player their role; only non-impostors receive the secret
   for (const id of playerIds) {
     const sock = io.sockets.sockets.get(id);
     if (!sock) continue;
@@ -146,21 +121,17 @@ function nextPhase(room) {
 }
 
 function finishVoting(room) {
-  // Tally votes
   const tally = {};
   for (const voterId of Object.keys(room.votes)) {
     const targetId = room.votes[voterId];
     if (!targetId) continue;
     tally[targetId] = (tally[targetId] || 0) + 1;
   }
-  // Determine ejected by highest votes (plurality)
+
   let ejectedId = null;
   let maxVotes = -1;
   for (const targetId of Object.keys(tally)) {
-    if (tally[targetId] > maxVotes) {
-      ejectedId = targetId;
-      maxVotes = tally[targetId];
-    }
+    if (tally[targetId] > maxVotes) { ejectedId = targetId; maxVotes = tally[targetId]; }
   }
 
   const impostorId = Object.values(room.players).find(p => p.isImpostor)?.id;
@@ -173,7 +144,6 @@ function finishVoting(room) {
   });
 
   if (!ejectedId) {
-    // No ejection -> Impostor survives and gets a final guess
     room.status = "finalGuess";
     io.to(impostorId).emit("yourFinalGuess", { tries: 1 });
     io.to(room.code).emit("phaseChange", { phase: "finalGuess" });
@@ -181,11 +151,9 @@ function finishVoting(room) {
   }
 
   if (ejectedId !== impostorId) {
-    // Wrong ejection -> Impostor wins immediately
     room.status = "ended";
     io.to(room.code).emit("gameOver", { winner: "impostor", reason: "wrong_vote", secret: room.secretPlayer });
   } else {
-    // Impostor ejected -> gets single final guess
     room.status = "finalGuess";
     io.to(impostorId).emit("yourFinalGuess", { tries: 1 });
     io.to(room.code).emit("phaseChange", { phase: "finalGuess" });
@@ -193,9 +161,7 @@ function finishVoting(room) {
 }
 
 function cleanRoomIfEmpty(room) {
-  if (Object.keys(room.players).length === 0) {
-    delete rooms[room.code];
-  }
+  if (Object.keys(room.players).length === 0) delete rooms[room.code];
 }
 
 io.on("connection", (socket) => {
@@ -227,18 +193,9 @@ io.on("connection", (socket) => {
   socket.on("joinRoom", ({ roomCode, name }) => {
     const code = (roomCode || "").toUpperCase().trim();
     const room = getRoom(code);
-    if (!room) {
-      socket.emit("joinError", { message: "Room not found." });
-      return;
-    }
-    if (Object.keys(room.players).length >= room.maxPlayers) {
-      socket.emit("joinError", { message: "Room is full." });
-      return;
-    }
-    if (room.status !== "lobby") {
-      socket.emit("joinError", { message: "Game already started." });
-      return;
-    }
+    if (!room) return socket.emit("joinError", { message: "Room not found." });
+    if (Object.keys(room.players).length >= room.maxPlayers) return socket.emit("joinError", { message: "Room is full." });
+    if (room.status !== "lobby") return socket.emit("joinError", { message: "Game already started." });
 
     room.players[socket.id] = { id: socket.id, name: (name || "Player").trim().slice(0, 20), isHost: false, isImpostor: false };
     joinedRoomCode = code;
@@ -271,7 +228,6 @@ io.on("connection", (socket) => {
     const count = Object.keys(room.submissions[room.round]).length;
     io.to(room.code).emit("submissionUpdate", { round: room.round, count });
 
-    // broadcast anonymized hints
     const hints = Object.values(room.submissions[room.round]);
     io.to(room.code).emit("hintsUpdate", { round: room.round, hints });
   });
@@ -290,7 +246,6 @@ io.on("connection", (socket) => {
     const me = room.players[socket.id];
     if (!me || !room.players[targetId] || targetId === socket.id) return;
 
-    // lock vote
     if (room.votes[socket.id]) {
       socket.emit("toast", { type: "info", message: "Your vote is already recorded." });
       return;
@@ -309,7 +264,6 @@ io.on("connection", (socket) => {
     finishVoting(room);
   });
 
-  // Impostor can guess anytime during describing/voting, or finalGuess (one official try if ejected)
   socket.on("impostorGuess", ({ guess }) => {
     if (!joinedRoomCode) return;
     const room = getRoom(joinedRoomCode);
@@ -329,7 +283,6 @@ io.on("connection", (socket) => {
         room.status = "ended";
         io.to(room.code).emit("gameOver", { winner: "impostor", reason: "impostor_early_guess", secret: room.secretPlayer });
       } else {
-        // wrong early guess: nothing happens (keeps it simple)
         socket.emit("toast", { type: "info", message: "Not correct. Keep trying to blend in." });
       }
     }
@@ -339,7 +292,7 @@ io.on("connection", (socket) => {
     if (!joinedRoomCode) return;
     const room = getRoom(joinedRoomCode);
     if (!room || room.hostId !== socket.id) return;
-    // Reset to lobby but keep players
+
     room.status = "lobby";
     room.round = 0;
     room.secretPlayer = null;
@@ -358,7 +311,6 @@ io.on("connection", (socket) => {
     delete room.players[socket.id];
     socket.leave(joinedRoomCode);
 
-    // If host left, transfer host to first remaining player (if any)
     if (wasHost) {
       const first = Object.keys(room.players)[0];
       if (first) {
@@ -368,7 +320,6 @@ io.on("connection", (socket) => {
       }
     }
 
-    // If game has <3 players mid-game, end and return to lobby
     const playerCount = Object.keys(room.players).length;
     if (room.status !== "lobby" && playerCount < 3) {
       room.status = "lobby";
@@ -388,4 +339,3 @@ io.on("connection", (socket) => {
 server.listen(PORT, () => {
   console.log(`Soccer Impostor running on port ${PORT}`);
 });
-EOF
