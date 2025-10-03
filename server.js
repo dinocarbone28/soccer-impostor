@@ -1,3 +1,5 @@
+cd ~/Desktop/soccer-impostor
+cat > server.js << 'EOF'
 // server.js (CommonJS) — Express + Socket.IO
 const path = require("path");
 const express = require("express");
@@ -8,8 +10,10 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Serve static files from /public
+app.use(express.static(path.join(__dirname, "public")));
+
 const PORT = process.env.PORT || 3000;
-});
 
 // --- Sanitized player pool (ASCII only; accents/quotes removed) ---
 const PLAYER_POOL = [
@@ -179,7 +183,7 @@ function finishVoting(room) {
   if (ejectedId !== impostorId) {
     // Wrong ejection -> Impostor wins immediately
     room.status = "ended";
-    io.to(room.code).emit("gameOver", { winner: "impostor", reason: "wrong_vote" });
+    io.to(room.code).emit("gameOver", { winner: "impostor", reason: "wrong_vote", secret: room.secretPlayer });
   } else {
     // Impostor ejected -> gets single final guess
     room.status = "finalGuess";
@@ -251,26 +255,26 @@ io.on("connection", (socket) => {
     if (!res.ok) socket.emit("toast", { type: "error", message: res.error });
   });
 
-socket.on("submitDescription", ({ text }) => {
-  if (!joinedRoomCode) return;
-  const room = getRoom(joinedRoomCode);
-  if (!room || room.status !== "describing") return;
-  const me = room.players[socket.id];
-  if (!me) return;
+  socket.on("submitDescription", ({ text }) => {
+    if (!joinedRoomCode) return;
+    const room = getRoom(joinedRoomCode);
+    if (!room || room.status !== "describing") return;
+    const me = room.players[socket.id];
+    if (!me) return;
 
-  const t = ("" + (text || "")).trim().slice(0, 80);
-  if (!t) return;
+    const t = ("" + (text || "")).trim().slice(0, 80);
+    if (!t) return;
 
-  if (!room.submissions[room.round]) room.submissions[room.round] = {};
-  room.submissions[room.round][socket.id] = t;
+    if (!room.submissions[room.round]) room.submissions[room.round] = {};
+    room.submissions[room.round][socket.id] = t;
 
-  const count = Object.keys(room.submissions[room.round]).length;
-  io.to(room.code).emit("submissionUpdate", { round: room.round, count });
+    const count = Object.keys(room.submissions[room.round]).length;
+    io.to(room.code).emit("submissionUpdate", { round: room.round, count });
 
-  // broadcast anonymized hints
-  const hints = Object.values(room.submissions[room.round]);
-  io.to(room.code).emit("hintsUpdate", { round: room.round, hints });
-});
+    // broadcast anonymized hints
+    const hints = Object.values(room.submissions[room.round]);
+    io.to(room.code).emit("hintsUpdate", { round: room.round, hints });
+  });
 
   socket.on("hostNextPhase", () => {
     if (!joinedRoomCode) return;
@@ -280,23 +284,23 @@ socket.on("submitDescription", ({ text }) => {
   });
 
   socket.on("castVote", ({ targetId }) => {
-  if (!joinedRoomCode) return;
-  const room = getRoom(joinedRoomCode);
-  if (!room || room.status !== "voting") return;
-  const me = room.players[socket.id];
-  if (!me || !room.players[targetId] || targetId === socket.id) return;
+    if (!joinedRoomCode) return;
+    const room = getRoom(joinedRoomCode);
+    if (!room || room.status !== "voting") return;
+    const me = room.players[socket.id];
+    if (!me || !room.players[targetId] || targetId === socket.id) return;
 
-  // lock vote
-  if (room.votes[socket.id]) {
-    socket.emit("toast", { type: "info", message: "Your vote is already recorded." });
-    return;
-  }
+    // lock vote
+    if (room.votes[socket.id]) {
+      socket.emit("toast", { type: "info", message: "Your vote is already recorded." });
+      return;
+    }
 
-  room.votes[socket.id] = targetId;
+    room.votes[socket.id] = targetId;
 
-  const totalVotes = Object.keys(room.votes).length;
-  io.to(room.code).emit("voteCountUpdate", { totalVotes });
-});
+    const totalVotes = Object.keys(room.votes).length;
+    io.to(room.code).emit("voteCountUpdate", { totalVotes });
+  });
 
   socket.on("hostEndVoting", () => {
     if (!joinedRoomCode) return;
@@ -382,5 +386,6 @@ socket.on("submitDescription", ({ text }) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Soccer Impostor running on http://localhost:${PORT}`);
+  console.log(`Soccer Impostor running on port ${PORT}`);
 });
+EOF
