@@ -7,8 +7,9 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "uuid": "^13.0.0"
   },
   "engines": {
     "node": "20.x"
