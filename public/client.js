@@ -1,4 +1,4 @@
-// client.js — Soccer Impostor (refactor + UX polish + bug fixes)
+// client.js — Soccer Impostor (v1.4.0) — adds SKIP vote, vote-screen hints, robust replay
 
 const socket = io();
 const $ = id => document.getElementById(id);
@@ -75,14 +75,19 @@ socket.on("phase", (snap)=>{
 
   if(snap.phase==="VOTE"){
     const alive = snap.players.filter(p=>p.alive);
+    // render hints for quick reference
+    $("voteHints").innerHTML = snap.hints.map(h=>`<li><strong>${escapeHtml(h.name)}:</strong> ${escapeHtml(h.text)}</li>`).join("");
+
     $("voteList").innerHTML = alive.map(p => `
       <label class="voteCard">
         <span>${escapeHtml(p.name)}</span>
         <input type="radio" name="voteTarget" value="${p.id}">
       </label>
     `).join("");
-    $("voteStatus").textContent = "Cast your vote. Majority required; no majority = next hint round.";
+
+    $("voteStatus").textContent = "Cast your vote. Majority required; no majority or Skip majority = next hint round.";
     $("submitVoteBtn").disabled=false;
+    // keep the separate SKIP radio that exists in HTML
     show("vote"); return;
   }
 
@@ -94,7 +99,7 @@ socket.on("phase", (snap)=>{
   }
 });
 
-// Secret comes privately only to innocents (fix for assignment display)
+// Secret comes privately only to innocents
 socket.on("secret", ({ secretPlayer })=>{
   mySecret = secretPlayer || null;
   if(latestSnap?.phase === "HINT"){
@@ -106,7 +111,7 @@ socket.on("secret", ({ secretPlayer })=>{
   }
 });
 
-// Turn info now includes player name (fixes "—")
+// Turn info (includes player name)
 socket.on("turn", ({ turnId, turnName, seconds })=>{
   currentTurnId = turnId;
   currentTurnName = turnName || "—";
@@ -137,7 +142,7 @@ socket.on("hint:update", ({ hints })=>{
 
 $("submitVoteBtn").onclick = ()=>{
   const picked = document.querySelector('input[name="voteTarget"]:checked');
-  if(!picked) return alert("Pick someone");
+  if(!picked) return alert("Pick someone or choose Skip");
   socket.emit("vote:cast", { code: roomCode, targetId: picked.value }, (res)=>{
     if(!res?.ok) alert(res?.error||"Vote failed");
     else {
@@ -155,7 +160,7 @@ socket.on("vote:update", ({ votes })=>{
 // host buttons (host can act even if eliminated)
 $("startGameBtn").onclick  = ()=> socket.emit("host:start",        { code: roomCode }, r => { if(!r?.ok) alert(r?.error||"Cannot start"); });
 $("forceNextBtn").onclick  = ()=> socket.emit("host:forceNextTurn",{ code: roomCode });
-$("forceRestartBtn").onclick = ()=> socket.emit("host:forceRestart",{ code: roomCode });
+$("forceRestartBtn").onclick = ()=> socket.emit("host:forceRestart",{ code: roomCode }); // randomize roles & secret
 $("playAgainBtn").onclick  = ()=> socket.emit("host:forceRestart",{ code: roomCode });
 
 // helpers

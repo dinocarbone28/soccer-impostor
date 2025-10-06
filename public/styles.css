@@ -19,6 +19,7 @@ body{
 .view{display:none;opacity:0;transform:translateY(10px);transition:opacity .35s ease, transform .35s ease}
 .view.active{display:grid;gap:18px;opacity:1;transform:none}
 .panel{background:var(--card);border:1px solid var(--soft);border-radius:18px;padding:18px;box-shadow:var(--shadow)}
+.subpanel{border:1px dashed #243356;border-radius:12px;padding:10px 12px;margin:8px 0 16px;background:#0b1428}
 .row{display:flex;gap:10px;margin:8px 0}
 .row.two > *{flex:1}
 .row.wrap{flex-wrap:wrap}

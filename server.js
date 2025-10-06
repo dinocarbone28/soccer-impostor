@@ -1,4 +1,4 @@
-// server.js — Soccer Impostor (refactor + fixes + polish)
+// server.js — Soccer Impostor (v1.4.0) — SKIP voting, replay randomization, robust end-game reveals
 
 const path = require("path");
 const express = require("express");
@@ -14,7 +14,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = process.env.PORT || 3000;
 
-// --- Soccer players (sanitized: no embedded quotes) ---
+// --- Soccer players ---
 const ALL_PLAYERS = [
   "Lionel Messi","Kylian Mbappe","Erling Haaland","Vinicius Junior","Mohamed Salah","Harry Kane","Jude Bellingham","Lautaro Martinez","Antoine Griezmann","Robert Lewandowski","Son Heung-min","Bukayo Saka","Jamal Musiala","Florian Wirtz","Rafael Leao","Khvicha Kvaratskhelia","Rodrygo","Ousmane Dembele","Leroy Sane","Kingsley Coman","Marcus Rashford","Jack Grealish","Christopher Nkunku","Kai Havertz","Joao Felix","Darwin Nunez","Victor Osimhen","Alexander Isak","Randal Kolo Muani","Dusan Vlahovic","Alvaro Morata","Federico Chiesa","Julian Alvarez","Paulo Dybala","Angel Di Maria","Kenan Yildiz","Dayro Moreno",
   "Kevin De Bruyne","Bernardo Silva","Martin Odegaard","Bruno Fernandes","Federico Valverde","Pedri","Gavi","Frenkie de Jong","Ilkay Gundogan","Toni Kroos","Luka Modric","Declan Rice","Casemiro","Adrien Rabiot","Nicolo Barella","Hakan Calhanoglu","Sandro Tonali","Sergej Milinkovic-Savic","James Maddison","Mason Mount","Dominik Szoboszlai","Dani Olmo","Youssouf Fofana","Aurelien Tchouameni","Eduardo Camavinga","Marco Verratti","Martin Zubimendi","Mikel Merino","Alexis Mac Allister","Enzo Fernandez","Moises Caicedo","Joao Palhinha","Teun Koopmeiners","Scott McTominay","Weston McKennie","Christian Pulisic","Giovanni Reyna","Luis Diaz","Rodrigo De Paul","Leandro Paredes",
@@ -37,7 +37,8 @@ room = {
   currentTurnIdx,
   votes: { [voterId]: targetId },
   winners: 'INNOCENTS'|'IMPOSTORS'|null,
-  turnTimer: Timeout
+  turnTimer: Timeout,
+  lastSecret: string | null
 }
 */
 const rooms = Object.create(null);
@@ -50,6 +51,15 @@ const alivePlayers = r => Object.values(r.players).filter(p => p.alive);
 const countImpostors = r => alivePlayers(r).filter(p => p.role === "impostor").length;
 const countInnocents = r => alivePlayers(r).filter(p => p.role === "innocent").length;
 const majorityNeeded = n => Math.floor(n/2)+1;
+
+function pickNewSecret(prev) {
+  if (ALL_PLAYERS.length <= 1) return ALL_PLAYERS[0];
+  let candidate = prev;
+  while (candidate === prev) {
+    candidate = ALL_PLAYERS[Math.floor(Math.random() * ALL_PLAYERS.length)];
+  }
+  return candidate;
+}
 
 function snapshot(code) {
   const r = rooms[code]; if (!r) return null;
@@ -65,7 +75,6 @@ function snapshot(code) {
     hints: r.hints,
     votes: r.votes,
     winners: r.winners,
-    // IMPORTANT: Do NOT include secret player here during game (prevents leaking to impostors)
     secretPlayer: r.phase === "GAME_OVER" ? r.secretPlayer : null
   };
 }
@@ -87,7 +96,7 @@ function rotateOrderStartIndex(r) {
 }
 
 // --- core phase handlers ---
-function startGame(code, keepRotation = false) {
+function startGame(code, keepRotation = false, randomize = false) {
   const r = rooms[code]; if (!r) return;
 
   r.phase = "HINT";
@@ -96,25 +105,31 @@ function startGame(code, keepRotation = false) {
   r.winners = null;
 
   const ids = Object.keys(r.players);
+
+  // maintain order (and rotate if continuing rounds), but allow fresh randomization on replay if requested
   if (!keepRotation) {
     r.order = ids;
     r.orderStartIndex = 0;
   } else {
-    r.order = r.order.filter(id => ids.includes(id)); // keep existing order minus leavers
+    r.order = r.order.filter(id => ids.includes(id));
     rotateOrderStartIndex(r);
   }
 
-  // assign roles
+  // reset everyone alive; optionally re-randomize roles/secret
+  ids.forEach(id => { r.players[id].alive = true; r.players[id].role = "innocent"; });
+
+  // assign roles (random each start; capped)
   const shuffled = shuffle(ids);
   const maxImpostors = Math.max(1, Math.floor(ids.length / 3));
   const impostorCount = Math.min(r.settings.impostors || 1, maxImpostors);
   const impostors = new Set(shuffled.slice(0, impostorCount));
-  ids.forEach(id => { r.players[id].alive = true; r.players[id].role = impostors.has(id) ? "impostor" : "innocent"; });
+  ids.forEach(id => { r.players[id].role = impostors.has(id) ? "impostor" : "innocent"; });
 
-  // pick secret
-  r.secretPlayer = ALL_PLAYERS[Math.floor(Math.random() * ALL_PLAYERS.length)];
+  // choose secret (ensure different from last if replay/randomize)
+  const prev = r.lastSecret || null;
+  r.secretPlayer = randomize ? pickNewSecret(prev) : ALL_PLAYERS[Math.floor(Math.random()*ALL_PLAYERS.length)];
+  r.lastSecret = r.secretPlayer;
 
-  // broadcast phase (no secret) and privately send secret to innocents
   io.to(code).emit("phase", snapshot(code));
   sendSecretToInnocents(code);
 
@@ -134,7 +149,7 @@ function announceTurn(code) {
     r.votes = {};
     io.to(code).emit("phase", snapshot(code));
     return;
-    }
+  }
 
   const turnId = aliveIds[r.currentTurnIdx];
   const turnName = r.players[turnId]?.name || "—";
@@ -143,7 +158,6 @@ function announceTurn(code) {
 
   clearTimeout(r.turnTimer);
   r.turnTimer = setTimeout(() => {
-    // auto-advance if no hint submitted
     const p = r.players[turnId];
     if (p && p.alive) {
       r.hints.push({ by: turnId, name: p.name, text: "(no hint)" });
@@ -175,7 +189,7 @@ function eliminateAndContinue(code, targetId) {
     io.to(code).emit("phase", snapshot(code)); return;
   }
 
-  // reset for next hint round
+  // next hint round
   r.phase = "HINT";
   r.hints = [];
   r.votes = {};
@@ -215,7 +229,8 @@ io.on("connection", (socket) => {
       currentTurnIdx: 0,
       votes: {},
       winners: null,
-      turnTimer: null
+      turnTimer: null,
+      lastSecret: null
     };
     socket.join(code);
     ack?.({ ok: true, code });
@@ -241,7 +256,7 @@ io.on("connection", (socket) => {
   socket.on("host:start", ({ code }, ack) => {
     const r = rooms[code]; if (!r) return;
     if (Object.keys(r.players).length < 3) return ack?.({ ok:false, error:"Need at least 3 players" });
-    startGame(code);
+    startGame(code); // fresh game
     ack?.({ ok:true });
   });
 
@@ -250,9 +265,10 @@ io.on("connection", (socket) => {
     if (r.phase === "HINT") advanceTurn(code);
   });
 
+  // Replay with randomization (roles + new secret different from last)
   socket.on("host:forceRestart", ({ code }) => {
     const r = rooms[code]; if (!r || socket.id !== r.hostId) return;
-    startGame(code, true);
+    startGame(code, true, true); // keep rotation, randomize roles/secret
   });
 
   socket.on("hint:submit", ({ code, text }, ack) => {
@@ -270,7 +286,11 @@ io.on("connection", (socket) => {
     const r = rooms[code]; if (!r || r.phase !== "VOTE") return ack?.({ ok:false });
     const voter = r.players[socket.id]; if (!voter || !voter.alive) return ack?.({ ok:false });
     if (r.votes[socket.id]) return ack?.({ ok:false, error:"Vote already cast" });
-    if (!r.players[targetId] || !r.players[targetId].alive) return ack?.({ ok:false, error:"Invalid target" });
+
+    // Accept SKIP as a valid choice
+    if (targetId !== "SKIP" && (!r.players[targetId] || !r.players[targetId].alive)) {
+      return ack?.({ ok:false, error:"Invalid target" });
+    }
 
     r.votes[socket.id] = targetId;
     io.to(code).emit("vote:update", { votes: Object.keys(r.votes).length });
@@ -278,28 +298,35 @@ io.on("connection", (socket) => {
     const aliveCount = alivePlayers(r).length;
     const need = majorityNeeded(aliveCount);
 
-    // Tally top vote
+    // Tally
     const tally = {};
     Object.values(r.votes).forEach(t => tally[t] = (tally[t]||0) + 1);
-    const [topId, topCount] = Object.entries(tally).sort((a,b)=>b[1]-a[1])[0] || [null,0];
 
-   if (topCount >= need) {
-  // Majority found → eliminate target and proceed normally
-  eliminateAndContinue(code, topId);
-} else if (Object.keys(r.votes).length >= aliveCount) {
-  // Everyone voted but no majority → next hint round
-  // ✅ NEW: rotate the hint order each round for fairness
-  rotateOrderStartIndex(r);
-rotateOrderStartIndex(r); // ensure dynamic rotation after elimination too
-  r.phase = "HINT";
-  r.hints = [];
-  r.votes = {};
-  r.currentTurnIdx = 0;
+    // Find top (including SKIP), and also check if SKIP has majority
+    const entries = Object.entries(tally).sort((a,b)=>b[1]-a[1]); // [ [idOrSKIP, count], ... ]
+    const [topId, topCount] = entries[0] || [null,0];
+    const skipCount = tally["SKIP"] || 0;
 
-  io.to(code).emit("phase", snapshot(code));
-  sendSecretToInnocents(code);
-  announceTurn(code);
-}
+    // If SKIP reaches majority → next hint round
+    if (skipCount >= need) {
+      rotateAndNextHintRound(code, r);
+      ack?.({ ok:true });
+      return;
+    }
+
+    // If someone (a player) reaches majority → eliminate them
+    if (topId && topId !== "SKIP" && topCount >= need) {
+      eliminateAndContinue(code, topId);
+      ack?.({ ok:true });
+      return;
+    }
+
+    // If everyone voted but no majority (or a tie, or SKIP just plurality) → next hint round
+    if (Object.keys(r.votes).length >= aliveCount) {
+      rotateAndNextHintRound(code, r);
+      ack?.({ ok:true });
+      return;
+    }
 
     ack?.({ ok:true });
   });
@@ -316,5 +343,16 @@ rotateOrderStartIndex(r); // ensure dynamic rotation after elimination too
     }
   });
 });
+
+function rotateAndNextHintRound(code, r){
+  r.phase = "HINT";
+  r.hints = [];
+  r.votes = {};
+  rotateOrderStartIndex(r);
+  r.currentTurnIdx = 0;
+  io.to(code).emit("phase", snapshot(code));
+  sendSecretToInnocents(code);
+  announceTurn(code);
+}
 
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
