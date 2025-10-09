@@ -1,4 +1,4 @@
-// server.js — Soccer Impostor (v1.4.0) — SKIP voting, replay randomization, robust end-game reveals
+// server.js — Soccer Impostor (v1.5.0) — global lobby, voting chat, server vote timer
 
 const path = require("path");
 const express = require("express");
@@ -25,23 +25,53 @@ const ALL_PLAYERS = [
 ];
 
 // --- Room model ---
+// room = {
+//   code, hostId,
+//   settings: { impostors, hintSeconds, voteSeconds },
+//   players: { [socketId]: { id, name, alive, role } },
+//   order: string[], orderStartIndex: number,
+//   phase: 'LOBBY'|'HINT'|'VOTE'|'GAME_OVER',
+//   secretPlayer,
+//   hints: [{by,name,text}],
+//   currentTurnIdx,
+//   votes: { [voterId]: targetId },
+//   winners: 'INNOCENTS'|'IMPOSTORS'|null,
+//   turnTimer: Timeout,
+//   voteTimer: Timeout | null,
+//   voteEndsAt: number | null,
+//   chatLog: [{by,name,text,at}] | undefined,
+//   lastSecret: string | null
+// }
+const rooms = Object.create(null);
+
+// ---- Global Lobby registry (lightweight) ----
 /*
-room = {
-  code, hostId,
-  settings: { impostors, hintSeconds },
-  players: { [socketId]: { id, name, alive, role } },
-  order: string[], orderStartIndex: number,
-  phase: 'LOBBY'|'HINT'|'VOTE'|'GAME_OVER',
-  secretPlayer,
-  hints: [{by,name,text}],
-  currentTurnIdx,
-  votes: { [voterId]: targetId },
-  winners: 'INNOCENTS'|'IMPOSTORS'|null,
-  turnTimer: Timeout,
-  lastSecret: string | null
+lobbyIndex = {
+  [code]: {
+    code, hostName, playerCount, maxPlayers, status: 'OPEN'|'IN_GAME',
+    createdAt, updatedAt
+  }
 }
 */
-const rooms = Object.create(null);
+const lobbyIndex = Object.create(null);
+
+// Minimal HTML/text sanitization for chat
+function cleanMsg(msg) {
+  if (!msg) return "";
+  return String(msg).replace(/<\/?[^>]+(>|$)/g, "").slice(0, 200).trim();
+}
+
+// Simple per-socket anti-spam bucket
+const chatBuckets = new Map(); // socket.id -> { last: number, burst: number }
+function canChat(socketId) {
+  const now = Date.now();
+  const bucket = chatBuckets.get(socketId) || { last: 0, burst: 0 };
+  bucket.burst = Math.max(0, bucket.burst - (now - bucket.last) / 1000);
+  bucket.last = now;
+  bucket.burst += 1;
+  chatBuckets.set(socketId, bucket);
+  return bucket.burst <= 5; // ~5 msgs/sec bursty
+}
 
 // --- utils ---
 const LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -55,9 +85,7 @@ const majorityNeeded = n => Math.floor(n/2)+1;
 function pickNewSecret(prev) {
   if (ALL_PLAYERS.length <= 1) return ALL_PLAYERS[0];
   let candidate = prev;
-  while (candidate === prev) {
-    candidate = ALL_PLAYERS[Math.floor(Math.random() * ALL_PLAYERS.length)];
-  }
+  while (candidate === prev) candidate = ALL_PLAYERS[Math.floor(Math.random() * ALL_PLAYERS.length)];
   return candidate;
 }
 
@@ -103,6 +131,8 @@ function startGame(code, keepRotation = false, randomize = false) {
   r.hints = [];
   r.votes = {};
   r.winners = null;
+  clearTimeout(r.voteTimer); r.voteTimer = null; r.voteEndsAt = null;
+  r.chatLog = [];
 
   const ids = Object.keys(r.players);
 
@@ -115,25 +145,21 @@ function startGame(code, keepRotation = false, randomize = false) {
     rotateOrderStartIndex(r);
   }
 
-  // reset everyone alive; optionally re-randomize roles/secret
+  // reset everyone alive
   ids.forEach(id => { r.players[id].alive = true; r.players[id].role = "innocent"; });
 
- // assign roles (fully randomized, always reshuffled each start)
-const shuffled = shuffle([...ids]); // fresh shuffle each round
-const maxImpostors = Math.max(1, Math.floor(ids.length / 3));
-const impostorCount = Math.min(r.settings.impostors || 1, maxImpostors);
+  // assign roles (fully randomized each start)
+  const shuffled = shuffle([...ids]);
+  const maxImpostors = Math.max(1, Math.floor(ids.length / 3));
+  const impostorCount = Math.min(r.settings.impostors || 1, maxImpostors);
 
-// pick completely random impostors
-const impostors = new Set();
-while (impostors.size < impostorCount) {
-  const randomId = shuffled[Math.floor(Math.random() * shuffled.length)];
-  impostors.add(randomId);
-}
+  const impostors = new Set();
+  while (impostors.size < impostorCount) {
+    const randomId = shuffled[Math.floor(Math.random() * shuffled.length)];
+    impostors.add(randomId);
+  }
+  ids.forEach(id => { r.players[id].role = impostors.has(id) ? "impostor" : "innocent"; });
 
-// assign roles
-ids.forEach(id => {
-  r.players[id].role = impostors.has(id) ? "impostor" : "innocent";
-});
   // choose secret (ensure different from last if replay/randomize)
   const prev = r.lastSecret || null;
   r.secretPlayer = randomize ? pickNewSecret(prev) : ALL_PLAYERS[Math.floor(Math.random()*ALL_PLAYERS.length)];
@@ -156,6 +182,35 @@ function announceTurn(code) {
     // move to vote phase
     r.phase = "VOTE";
     r.votes = {};
+    // start server-authoritative vote timer
+    clearTimeout(r.voteTimer);
+    const vs = Math.max(10, Number(r.settings.voteSeconds || 45));
+    r.voteEndsAt = Date.now() + vs * 1000;
+    io.to(code).emit("vote:start", { endsAt: r.voteEndsAt, serverNow: Date.now(), seconds: vs });
+
+    r.voteTimer = setTimeout(() => {
+      try {
+        const aliveCount = alivePlayers(r).length;
+        const need = majorityNeeded(aliveCount);
+        const tally = {};
+        Object.values(r.votes).forEach(t => tally[t] = (tally[t]||0) + 1);
+        const entries = Object.entries(tally).sort((a,b)=>b[1]-a[1]);
+        const [topId, topCount] = entries[0] || [null, 0];
+        const skipCount = tally["SKIP"] || 0;
+
+        if (skipCount >= need) {
+          rotateAndNextHintRound(code, r);
+          return;
+        }
+        if (topId && topId !== "SKIP" && topCount >= need) {
+          eliminateAndContinue(code, topId);
+          return;
+        }
+        // Otherwise, time up -> no majority -> next round
+        rotateAndNextHintRound(code, r);
+      } catch {}
+    }, vs * 1000);
+
     io.to(code).emit("phase", snapshot(code));
     return;
   }
@@ -190,18 +245,39 @@ function eliminateAndContinue(code, targetId) {
   io.to(code).emit("lobby:update", snapshot(code));
 
   if (t.role === "impostor" && countImpostors(r) === 0) {
+    clearTimeout(r.voteTimer); r.voteTimer = null; r.voteEndsAt = null;
     r.phase = "GAME_OVER"; r.winners = "INNOCENTS";
     io.to(code).emit("phase", snapshot(code)); return;
   }
   if (countInnocents(r) <= 1) {
+    clearTimeout(r.voteTimer); r.voteTimer = null; r.voteEndsAt = null;
     r.phase = "GAME_OVER"; r.winners = "IMPOSTORS";
     io.to(code).emit("phase", snapshot(code)); return;
   }
 
   // next hint round
+  rotateAndNextHintRound(code, r);
+}
+
+function checkEndConditions(code) {
+  const r = rooms[code]; if (!r) return;
+  if (countImpostors(r) === 0) {
+    clearTimeout(r.voteTimer); r.voteTimer = null; r.voteEndsAt = null;
+    r.phase = "GAME_OVER"; r.winners = "INNOCENTS";
+    io.to(code).emit("phase", snapshot(code)); return;
+  }
+  if (countInnocents(r) <= 1) {
+    clearTimeout(r.voteTimer); r.voteTimer = null; r.voteEndsAt = null;
+    r.phase = "GAME_OVER"; r.winners = "IMPOSTORS";
+    io.to(code).emit("phase", snapshot(code)); return;
+  }
+}
+
+function rotateAndNextHintRound(code, r){
   r.phase = "HINT";
   r.hints = [];
   r.votes = {};
+  clearTimeout(r.voteTimer); r.voteTimer = null; r.voteEndsAt = null;
   rotateOrderStartIndex(r);
   r.currentTurnIdx = 0;
   io.to(code).emit("phase", snapshot(code));
@@ -209,26 +285,26 @@ function eliminateAndContinue(code, targetId) {
   announceTurn(code);
 }
 
-function checkEndConditions(code) {
-  const r = rooms[code]; if (!r) return;
-  if (countImpostors(r) === 0) {
-    r.phase = "GAME_OVER"; r.winners = "INNOCENTS";
-    io.to(code).emit("phase", snapshot(code)); return;
-  }
-  if (countInnocents(r) <= 1) {
-    r.phase = "GAME_OVER"; r.winners = "IMPOSTORS";
-    io.to(code).emit("phase", snapshot(code)); return;
-  }
-}
-
 // --- sockets ---
 io.on("connection", (socket) => {
+  // Lobby listing
+  socket.on("lobby:list", (ack) => {
+    ack?.(Object.values(lobbyIndex));
+  });
+  socket.on("lobby:watch", () => {
+    socket.emit("lobby:changed", Object.values(lobbyIndex));
+  });
+
   socket.on("host:create", ({ name, impostors=1, hintSeconds=30 }, ack) => {
     const code = makeCode();
     rooms[code] = {
       code,
       hostId: socket.id,
-      settings: { impostors: Math.max(1, +impostors||1), hintSeconds: Math.max(5, +hintSeconds||30) },
+      settings: {
+        impostors: Math.max(1, +impostors||1),
+        hintSeconds: Math.max(5, +hintSeconds||30),
+        voteSeconds: 45
+      },
       players: { [socket.id]: { id: socket.id, name: (name||"Host").trim(), alive: true, role: "innocent" } },
       order: [socket.id],
       orderStartIndex: 0,
@@ -239,8 +315,22 @@ io.on("connection", (socket) => {
       votes: {},
       winners: null,
       turnTimer: null,
+      voteTimer: null,
+      voteEndsAt: null,
+      chatLog: [],
       lastSecret: null
     };
+    lobbyIndex[code] = {
+      code,
+      hostName: (name || "Host").trim(),
+      playerCount: 1,
+      maxPlayers: 10,
+      status: "OPEN",
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    io.emit("lobby:changed", Object.values(lobbyIndex));
+
     socket.join(code);
     ack?.({ ok: true, code });
     io.to(code).emit("lobby:update", snapshot(code));
@@ -255,9 +345,21 @@ io.on("connection", (socket) => {
     if (Object.values(r.players).some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
       return ack?.({ ok:false, error:"Name already taken" });
     }
+    // Optional capacity check:
+    if (lobbyIndex[code] && lobbyIndex[code].playerCount >= (lobbyIndex[code].maxPlayers || 10)) {
+      return ack?.({ ok:false, error:"Room is full" });
+    }
+
     r.players[socket.id] = { id: socket.id, name: trimmed, alive: true, role: "innocent" };
     r.order.push(socket.id);
     socket.join(code);
+
+    if (lobbyIndex[code]) {
+      lobbyIndex[code].playerCount = Object.keys(r.players).length;
+      lobbyIndex[code].updatedAt = Date.now();
+      io.emit("lobby:changed", Object.values(lobbyIndex));
+    }
+
     ack?.({ ok: true });
     io.to(code).emit("lobby:update", snapshot(code));
   });
@@ -265,6 +367,11 @@ io.on("connection", (socket) => {
   socket.on("host:start", ({ code }, ack) => {
     const r = rooms[code]; if (!r) return;
     if (Object.keys(r.players).length < 3) return ack?.({ ok:false, error:"Need at least 3 players" });
+    if (lobbyIndex[code]) {
+      lobbyIndex[code].status = "IN_GAME";
+      lobbyIndex[code].updatedAt = Date.now();
+      io.emit("lobby:changed", Object.values(lobbyIndex));
+    }
     startGame(code); // fresh game
     ack?.({ ok:true });
   });
@@ -277,6 +384,11 @@ io.on("connection", (socket) => {
   // Replay with randomization (roles + new secret different from last)
   socket.on("host:forceRestart", ({ code }) => {
     const r = rooms[code]; if (!r || socket.id !== r.hostId) return;
+    if (lobbyIndex[code]) {
+      lobbyIndex[code].status = "IN_GAME";
+      lobbyIndex[code].updatedAt = Date.now();
+      io.emit("lobby:changed", Object.values(lobbyIndex));
+    }
     startGame(code, true, true); // keep rotation, randomize roles/secret
   });
 
@@ -289,6 +401,31 @@ io.on("connection", (socket) => {
     io.to(code).emit("hint:update", { hints: r.hints });
     ack?.({ ok:true });
     advanceTurn(code);
+  });
+
+  // Voting chat — VOTE phase only
+  socket.on("chat:load", ({ code }, ack) => {
+    const r = rooms[code]; if (!r) return ack?.({ ok:false });
+    ack?.({ ok:true, messages: (r.chatLog || []).slice(-50) });
+  });
+
+  socket.on("chat:send", ({ code, text }, ack) => {
+    const r = rooms[code]; if (!r) return ack?.({ ok:false });
+    if (r.phase !== "VOTE") return ack?.({ ok:false, error:"Chat only allowed during voting" });
+    const me = r.players[socket.id];
+    if (!me || !me.alive) return ack?.({ ok:false });
+    if (!canChat(socket.id)) return ack?.({ ok:false, error:"Slow down" });
+
+    const body = cleanMsg(text);
+    if (!body) return ack?.({ ok:false });
+
+    if (!r.chatLog) r.chatLog = [];
+    const msg = { by: me.id, name: me.name, text: body, at: Date.now() };
+    r.chatLog.push(msg);
+    if (r.chatLog.length > 200) r.chatLog.shift();
+
+    io.to(code).emit("chat:new", msg);
+    ack?.({ ok:true });
   });
 
   socket.on("vote:cast", ({ code, targetId }, ack) => {
@@ -311,31 +448,14 @@ io.on("connection", (socket) => {
     const tally = {};
     Object.values(r.votes).forEach(t => tally[t] = (tally[t]||0) + 1);
 
-    // Find top (including SKIP), and also check if SKIP has majority
-    const entries = Object.entries(tally).sort((a,b)=>b[1]-a[1]); // [ [idOrSKIP, count], ... ]
+    const entries = Object.entries(tally).sort((a,b)=>b[1]-a[1]);
     const [topId, topCount] = entries[0] || [null,0];
     const skipCount = tally["SKIP"] || 0;
 
-    // If SKIP reaches majority → next hint round
-    if (skipCount >= need) {
-      rotateAndNextHintRound(code, r);
-      ack?.({ ok:true });
-      return;
-    }
+    if (skipCount >= need) { rotateAndNextHintRound(code, r); return ack?.({ ok:true }); }
+    if (topId && topId !== "SKIP" && topCount >= need) { eliminateAndContinue(code, topId); return ack?.({ ok:true }); }
 
-    // If someone (a player) reaches majority → eliminate them
-    if (topId && topId !== "SKIP" && topCount >= need) {
-      eliminateAndContinue(code, topId);
-      ack?.({ ok:true });
-      return;
-    }
-
-    // If everyone voted but no majority (or a tie, or SKIP just plurality) → next hint round
-    if (Object.keys(r.votes).length >= aliveCount) {
-      rotateAndNextHintRound(code, r);
-      ack?.({ ok:true });
-      return;
-    }
+    if (Object.keys(r.votes).length >= aliveCount) { rotateAndNextHintRound(code, r); return ack?.({ ok:true }); }
 
     ack?.({ ok:true });
   });
@@ -346,22 +466,19 @@ io.on("connection", (socket) => {
       const wasHost = r.hostId === socket.id;
       delete r.players[socket.id];
       r.order = r.order.filter(id => id !== socket.id);
+
+      if (lobbyIndex[code]) {
+        lobbyIndex[code].playerCount = Object.keys(r.players).length;
+        lobbyIndex[code].updatedAt = Date.now();
+        if (lobbyIndex[code].playerCount <= 0) delete lobbyIndex[code];
+        io.emit("lobby:changed", Object.values(lobbyIndex));
+      }
+
       if (r.phase !== "LOBBY") checkEndConditions(code);
       io.to(code).emit("lobby:update", snapshot(code));
       if (wasHost) { r.hostId = null; io.to(code).emit("host:left"); }
     }
   });
 });
-
-function rotateAndNextHintRound(code, r){
-  r.phase = "HINT";
-  r.hints = [];
-  r.votes = {};
-  rotateOrderStartIndex(r);
-  r.currentTurnIdx = 0;
-  io.to(code).emit("phase", snapshot(code));
-  sendSecretToInnocents(code);
-  announceTurn(code);
-}
 
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
