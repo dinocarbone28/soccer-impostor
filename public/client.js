@@ -2,7 +2,119 @@
 
 const socket = io();
 const $ = id => document.getElementById(id);
+// Global lobby
+const lobbyListEl = document.getElementById("lobbyList");
+const lobbyRefreshBtn = document.getElementById("lobbyRefreshBtn");
 
+// Vote timer + chat
+const voteCountdownEl = document.getElementById("voteCountdown");
+const chatLogEl = document.getElementById("chatLog");
+const chatInputEl = document.getElementById("chatInput");
+const chatSendBtn = document.getElementById("chatSendBtn");
+
+// Local state
+let voteTimerInt = null;
+let serverOffsetMs = 0; // serverNow - clientNow (computed on vote:start)
+function renderLobbyList(items) {
+  if (!lobbyListEl) return;
+  lobbyListEl.innerHTML = "";
+  if (!items || !items.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "No rooms yet. Host a room or click Refresh.";
+    lobbyListEl.appendChild(li);
+    return;
+  }
+  items.forEach(it => {
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <div class="row space-between">
+        <div>
+          <strong>${it.code}</strong>
+          <span class="muted small">• Host: ${it.hostName || "?"}</span>
+          <span class="muted small">• Players: ${it.playerCount}/${it.maxPlayers || 10}</span>
+          <span class="muted small">• ${it.status}</span>
+        </div>
+        <div><button class="btn small joinFromListBtn" data-code="${it.code}">Join</button></div>
+      </div>
+    `;
+    lobbyListEl.appendChild(li);
+  });
+
+  lobbyListEl.querySelectorAll(".joinFromListBtn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const code = btn.getAttribute("data-code");
+      const name = document.getElementById("joinName")?.value?.trim() || "Player";
+      socket.emit("player:join", { code, name }, (res) => {
+        if (!res?.ok) return alert(res?.error || "Could not join");
+        // switch to lobby view (you already have code to do this on 'lobby:update')
+      });
+    });
+  });
+}
+if (lobbyRefreshBtn) {
+  lobbyRefreshBtn.addEventListener("click", () => {
+    socket.emit("lobby:list", (items) => renderLobbyList(items));
+  });
+}
+
+// On entering START view, load once and start watch:
+socket.emit("lobby:list", (items) => renderLobbyList(items));
+socket.emit("lobby:watch");
+socket.on("lobby:changed", (items) => renderLobbyList(items));
+function startVoteCountdown(endsAtMs) {
+  clearInterval(voteTimerInt);
+  voteTimerInt = setInterval(() => {
+    const now = Date.now() + serverOffsetMs;
+    let left = Math.max(0, Math.floor((endsAtMs - now) / 1000));
+    if (voteCountdownEl) voteCountdownEl.textContent = `${left}s`;
+    if (left <= 0) clearInterval(voteTimerInt);
+  }, 250);
+}
+// Server announces vote window
+socket.on("vote:start", ({ endsAt, serverNow, seconds }) => {
+  // compute offset once per announcement
+  serverOffsetMs = (serverNow || Date.now()) - Date.now();
+  startVoteCountdown(endsAt);
+});
+socket.on("phase", (snap) => {
+  // ... your existing phase handling ...
+  if (snap.phase !== "VOTE") {
+    clearInterval(voteTimerInt);
+    if (voteCountdownEl) voteCountdownEl.textContent = "—";
+  }
+});
+function appendChatLine(name, text) {
+  if (!chatLogEl) return;
+  const line = document.createElement("div");
+  line.className = "line";
+  line.innerHTML = `<span class="name">${name}:</span> <span>${text}</span>`;
+  chatLogEl.appendChild(line);
+  chatLogEl.scrollTop = chatLogEl.scrollHeight;
+}
+
+if (chatSendBtn && chatInputEl) {
+  chatSendBtn.addEventListener("click", () => {
+    const text = chatInputEl.value.trim();
+    if (!text) return;
+    const code = window.currentRoomCode || document.getElementById("roomCode")?.textContent?.trim();
+    socket.emit("chat:send", { code, text }, (res) => {
+      if (!res?.ok && res?.error) alert(res.error);
+    });
+    chatInputEl.value = "";
+  });
+  chatInputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") chatSendBtn.click();
+  });
+}
+
+// Receive full history and new messages
+socket.on("chat:load", (msgs) => {
+  if (!chatLogEl) return;
+  chatLogEl.innerHTML = "";
+  (msgs || []).forEach(m => appendChatLine(m.name, m.text));
+});
+socket.on("chat:new", (m) => appendChatLine(m.name, m.text));
 let myId = null;
 let roomCode = null;
 let mySecret = null;

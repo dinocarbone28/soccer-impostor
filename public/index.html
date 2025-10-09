@@ -92,6 +92,16 @@
         <button id="joinBtn" class="btn">Join</button>
       </div>
     </section>
+    <!-- GLOBAL LOBBY BROWSER -->
+<div class="panel">
+  <h2>Find an Opponent (Global)</h2>
+  <div class="row wrap" style="gap:.5rem;margin:.5rem 0">
+    <button id="lobbyRefreshBtn" class="btn">Refresh</button>
+    <label class="muted small">Auto-updates when new rooms appear.</label>
+  </div>
+  <ul id="lobbyList" class="list"></ul>
+</div>
+
 
     <!-- Lobby -->
     <section id="lobby" class="view">
@@ -136,6 +146,21 @@
     <section id="vote" class="view">
       <div class="panel">
         <h2>Vote the Impostor</h2>
+      <!-- VOTE TOP BAR -->
+<div class="row space-between" style="align-items:center;margin-bottom:.75rem">
+  <div class="muted small">Voting ends in <strong id="voteCountdown">—</strong></div>
+  <div class="muted small">Round Hints &nbsp;↓</div>
+</div>
+<!-- Chat during voting -->
+<div id="voteChat" class="subpanel" style="margin-top:.75rem">
+  <h3>Chat</h3>
+  <div id="chatLog" class="chatLog"></div>
+  <div class="row" style="gap:.5rem;margin-top:.5rem">
+    <input id="chatInput" class="input" placeholder="Type a message…" maxlength="200">
+    <button id="chatSendBtn" class="btn">Send</button>
+  </div>
+</div>
+
 
         <!-- NEW: show current round hints on the voting screen -->
         <div class="subpanel">
