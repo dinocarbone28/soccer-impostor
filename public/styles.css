@@ -1,3 +1,199 @@
+/* === SOCCER THEME – non-breaking visual layer === */
+
+/* 1) Brand tokens */
+:root{
+  /* Pitch & stadium */
+  --pitch-900: #071a0e;   /* deep night green */
+  --pitch-800: #0b2b16;
+  --pitch-700: #114323;
+  --pitch-600: #15532c;
+  --line-100: #f6f8f7;    /* field line white */
+  --net-100: #dbe7e1;
+
+  /* Accents from the game */
+  --accent-yellow: #ffd400; /* referee card */
+  --accent-red:    #ff4b4b; /* red card (alerts/destructive) */
+  --accent-blue:   #3ac1ff; /* sky/scoreboard neon */
+  --accent-goal:   #00dc82; /* goal highlight */
+
+  /* UI neutrals */
+  --ink-900:#eaf2ee; --ink-700:#cce0d6; --ink-500:#a9c7b8; --ink-300:#88ad9e;
+  --glass:#0b2b16cc;      /* glassy overlay */
+  --surface:#0e2518;      /* panel surface */
+  --surface-2:#12321f;    /* slightly brighter panel */
+  --shadow: 0 10px 30px rgba(0,0,0,.35);
+
+  /* Typography */
+  --font-display: "Bebas Neue", system-ui, sans-serif;
+  --font-ui: "Rajdhani", system-ui, sans-serif;
+
+  /* Radii */
+  --radius-xl: 18px;
+  --radius-lg: 14px;
+  --radius-md: 10px;
+}
+
+/* 2) Stadium/pitch background with subtle field lines */
+body{
+  background:
+    radial-gradient(1500px 800px at 50% -10%, rgba(34,81,54,.45) 0%, rgba(11,43,22,0) 60%),
+    repeating-linear-gradient( to bottom,
+      rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 2px,
+      rgba(0,0,0,0) 2px, rgba(0,0,0,0) 78px) /* mowing stripes */,
+    linear-gradient(180deg, var(--pitch-900), var(--pitch-800));
+  color: var(--ink-900);
+  font-family: var(--font-ui);
+  line-height: 1.5;
+}
+
+/* 3) Top bar becomes “scoreboard” */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:1rem; padding:18px 20px;
+  background: linear-gradient(180deg, #0f3622 0%, #0b2b16 70%);
+  border-bottom: 2px solid #154a2a;
+  position: sticky; top:0; z-index: 20;
+  box-shadow: var(--shadow);
+}
+.brand{
+  font-family: var(--font-display);
+  letter-spacing: 1px;
+  font-size: clamp(26px, 3.4vw, 40px);
+  color: var(--line-100);
+  display:flex; align-items:center; gap:.5rem;
+}
+.brand::before{
+  content:"";
+  width:26px;height:26px;
+  background:
+    radial-gradient(circle at 70% 30%, #fff 0 26%, #dfe8e4 27% 42%, transparent 43%),
+    radial-gradient(circle at 30% 70%, #fff 0 26%, #dfe8e4 27% 42%, transparent 43%);
+  border-radius:50%;
+  outline: 2px solid #ffffff;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.2);
+}
+
+/* Room code styled like a scoreboard cell */
+#roomCode{
+  font-family: var(--font-display);
+  font-size: 22px; letter-spacing: 3px;
+  color: var(--accent-blue);
+  background: #031a10;
+  border: 1px solid #1f6a44;
+  padding: 6px 10px; border-radius: 8px;
+}
+
+/* 4) Panels become glassy pitch cards */
+.container{ max-width: 1080px; margin: 24px auto; padding: 0 16px; }
+.panel, .subpanel{
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  border: 1px solid #194f31;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+}
+.subpanel{ border-style:dashed }
+
+/* Section headers resemble field markings */
+h2, h3{
+  font-family: var(--font-display);
+  letter-spacing: .5px;
+  color: var(--line-100);
+  margin: 0 0 10px;
+}
+h2{ font-size: clamp(24px, 2.3vw, 30px); }
+h3{ font-size: clamp(18px, 1.9vw, 22px); }
+
+/* 5) Inputs: jersey stripe + field lines */
+.input{
+  width:100%;
+  background: #0a2216;
+  color: var(--ink-900);
+  border: 1px solid #206941;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.input:focus{
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(58,193,255,.15);
+}
+
+/* Input rows */
+.row{ display:flex; gap:12px; align-items:center; margin-bottom: 12px; }
+.row.two > div{ flex:1; }
+
+/* 6) Buttons: referee cards + neon */
+.btn{
+  --btn-bg: #103721;
+  --btn-fg: var(--ink-900);
+  --btn-bd: #216a42;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  border: 1px solid var(--btn-bd);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: .3px;
+  transition: transform .06s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
+}
+.btn:hover{ transform: translateY(-1px); box-shadow: 0 8px 18px rgba(0,0,0,.25); }
+.btn:active{ transform: translateY(0); }
+
+.btn.primary{
+  --btn-bg: linear-gradient(180deg, #ffe45e, var(--accent-yellow));
+  --btn-fg: #151515;
+  --btn-bd: #caa800;
+  text-shadow: 0 1px 0 rgba(255,255,255,.45);
+}
+.btn.danger{
+  --btn-bg: linear-gradient(180deg, #ff7a7a, var(--accent-red));
+  --btn-fg: #190000;
+  --btn-bd: #b21e1e;
+}
+
+/* 7) Lists/cards */
+.list{ list-style:none; padding:0; margin:0; }
+.list li{
+  padding:10px 12px; margin-bottom: 8px;
+  background: #0a2216; border:1px solid #1a4c31; border-radius: 12px;
+}
+
+/* Voting cards like line-marked tiles */
+.voteList, .voteCard{ display:grid; gap:10px; }
+.voteCard{
+  grid-template-columns: 1fr auto;
+  align-items:center; padding:12px 14px;
+  background: #0a2216;
+  border: 2px solid transparent;
+  border-image: linear-gradient(90deg,#1f6a44, #2f8a5e) 1;
+  border-radius: var(--radius-lg);
+}
+.voteCard:hover{ box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+
+/* 8) Tagline under brand (if you added it) */
+.game-tagline{
+  max-width:1080px; margin: 10px auto 18px; padding: 0 16px;
+  color: var(--ink-700); text-align:center; font-style: italic;
+}
+
+/* 9) Small utilities & a11y */
+.muted{ color: var(--ink-500); }
+.small{ font-size: .9rem; }
+.pulse{ animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse{ 0%{opacity:.75} 50%{opacity:1} 100%{opacity:.75} }
+
+/* Motion reduced preference */
+@media (prefers-reduced-motion: reduce){
+  .pulse, .btn{ animation: none; transition: none; }
+}
+
+/* 10) Responsive tweaks */
+@media (max-width: 720px){
+  .row.two{ flex-direction: column; }
+}
 :root{
   --bg:#0b1220; --card:#0f172a; --soft:#1b2540; --muted:#9fb4ff;
   --text:#e7eeff; --btn:#22c55e; --btnTxt:#07110e; --danger:#ef4444;
