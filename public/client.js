@@ -1,4 +1,6 @@
 // client.js — Soccer Impostor (v1.6.2)
+// Adds: Start Game host gating, auto redirect after create, global browser polish,
+// ready toggle, host settings, matchmaking name support.
 
 const socket = io();
 const $ = id => document.getElementById(id);
@@ -14,7 +16,7 @@ const chatLogEl = $("chatLog");
 const chatInputEl = $("chatInput");
 const chatSendBtn = $("chatSendBtn");
 
-// Start screen inputs
+// Start screen
 const hostNameEl = $("hostName");
 const hostImpostorsEl = $("hostImpostors");
 const hostHintSecEl = $("hostHintSec");
@@ -22,10 +24,11 @@ const hostPublicEl = $("hostPublic");
 const hostRegionEl = $("hostRegion");
 const hostMaxPlayersEl = $("hostMaxPlayers");
 
-// Lobby view
+// Lobby
 const readyToggleEl = $("readyToggle");
 const updateSettingsBtn = $("updateSettingsBtn");
-const startGameBtn = $("startGameBtn");
+const startBtn = $("startGameBtn");
+const startReqMsg = $("startReqMsg");
 
 // Game/phase globals
 let voteTimerInt = null;
@@ -36,25 +39,9 @@ let mySecret = null;
 let currentTurnId = null;
 let latestSnap = null;
 
+// Existing screen show()
 const screens = { start:$("start"), lobby:$("lobby"), hint:$("hint"), vote:$("vote"), over:$("over") };
 function show(name){ for(const k of Object.keys(screens)) screens[k].classList.remove("active"); screens[name].classList.add("active"); }
-
-// Utility
-function escapeHtml(s){ return (s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
-function pctReady(snap){
-  if (!snap) return 0;
-  const total = snap.players.length;
-  if (total === 0) return 0;
-  const hostId = snap.hostId;
-  const ready = snap.players.filter(p => p.ready || p.id === hostId).length;
-  return Math.round((ready / total) * 100);
-}
-function canStart(snap){
-  if (!snap) return false;
-  const cnt = snap.players.length;
-  if (cnt < 3) return false;
-  return pctReady(snap) >= 70; // same rule as server
-}
 
 // ----- Lobby browser rendering -----
 function renderLobbyList(items) {
@@ -70,17 +57,15 @@ function renderLobbyList(items) {
   items.forEach(it => {
     const pct = Math.min(100, Math.round((it.playerCount / it.maxPlayers) * 100));
     const li = document.createElement("li");
+    li.className = "voteCard";
     li.innerHTML = `
-      <div class="row space-between" style="align-items:center">
-        <div>
-          <strong>#${it.code}</strong>
-          <span class="muted small">• ${it.playerCount}/${it.maxPlayers} • ${it.status} • ${it.region}</span>
-          <div class="small muted" title="updated">${new Date(it.updatedAt).toLocaleTimeString()}</div>
-        </div>
-        <div class="row" style="gap:.5rem">
-          <div class="small muted" style="min-width:120px">[${"█".repeat(Math.round(pct/10))}${"░".repeat(10-Math.round(pct/10))}]</div>
-          <button class="btn small joinFromListBtn" data-code="${it.code}" ${it.status!=="WAITING"?"disabled":""}>Join</button>
-        </div>
+      <div>
+        <div><strong>#${it.code}</strong> <span class="muted small">• ${it.playerCount}/${it.maxPlayers} • ${it.status} • ${it.region}</span></div>
+        <div class="small muted">${new Date(it.updatedAt).toLocaleTimeString()}</div>
+      </div>
+      <div class="row" style="gap:.5rem">
+        <div class="small muted" style="min-width:120px">[${"█".repeat(Math.round(pct/10))}${"░".repeat(10-Math.round(pct/10))}]</div>
+        <button class="btn small joinFromListBtn" data-code="${it.code}" ${it.status!=="WAITING"?"disabled":""}>Join</button>
       </div>
     `;
     lobbyListEl.appendChild(li);
@@ -89,7 +74,6 @@ function renderLobbyList(items) {
   lobbyListEl.querySelectorAll(".joinFromListBtn").forEach(btn => {
     btn.addEventListener("click", () => {
       const code = btn.getAttribute("data-code");
-      // Prefer matchmaking name if present
       const name = $("matchName")?.value?.trim() || $("joinName")?.value?.trim() || "Player";
       socket.emit("player:join", { code, name }, (res) => {
         if (!res?.ok) return alert(res?.error || "Could not join");
@@ -101,8 +85,8 @@ function renderLobbyList(items) {
   });
 }
 
-// ----- Start screen actions -----
-$("createBtn")?.addEventListener("click", () => {
+// ----- Create / Join -----
+$("createBtn").onclick = () => {
   const name = hostNameEl.value.trim();
   const impostors = Number(hostImpostorsEl.value || 1);
   const hintSeconds = Number(hostHintSecEl.value || 30);
@@ -115,12 +99,12 @@ $("createBtn")?.addEventListener("click", () => {
     if(!res?.ok) return alert(res?.error||"Could not create");
     roomCode = res.code;
     $("roomCode").textContent = `Room: ${roomCode}`;
-    // Auto-navigate to actual lobby
+    // Auto-navigate to Lobby
     show("lobby");
   });
-});
+};
 
-$("joinBtn")?.addEventListener("click", () => {
+$("joinBtn").onclick = () => {
   const name = $("matchName")?.value?.trim() || $("joinName")?.value?.trim();
   const code = $("joinCode").value.trim().toUpperCase();
   if(!name || code.length!==5) return alert("Enter your name and the 5-letter code");
@@ -130,7 +114,7 @@ $("joinBtn")?.addEventListener("click", () => {
     $("roomCode").textContent = `Room: ${roomCode}`;
     show("lobby");
   });
-});
+};
 
 // ----- Global lobby feed -----
 function requestLobbyList(){
@@ -140,7 +124,7 @@ function requestLobbyList(){
   };
   socket.emit("lobby:list", filter, (items) => renderLobbyList(items));
 }
-lobbyRefreshBtn?.addEventListener("click", requestLobbyList);
+if (lobbyRefreshBtn) lobbyRefreshBtn.addEventListener("click", requestLobbyList);
 regionFilterEl?.addEventListener("change", () => socket.emit("lobby:watch", { region: regionFilterEl.value, onlyOpen: !!onlyOpenFilterEl?.checked }));
 onlyOpenFilterEl?.addEventListener("change", () => socket.emit("lobby:watch", { region: regionFilterEl?.value, onlyOpen: !!onlyOpenFilterEl?.checked }));
 
@@ -158,7 +142,7 @@ function startVoteCountdown(endsAtMs) {
     if (left <= 0) clearInterval(voteTimerInt);
   }, 250);
 }
-socket.on("vote:start", ({ endsAt, serverNow, seconds }) => {
+socket.on("vote:start", ({ endsAt, serverNow }) => {
   serverOffsetMs = (serverNow || Date.now()) - Date.now();
   startVoteCountdown(endsAt);
 });
@@ -185,14 +169,30 @@ if (chatSendBtn && chatInputEl) {
 }
 socket.on("chat:new", (m) => appendChatLine(m.name, m.text));
 
-// ----- Phase/snap handling -----
+// ----- Phase / lobby snapshots -----
 socket.on("connect", ()=>{ myId = socket.id; });
 
-function updateStartButton(snap){
-  if (!startGameBtn) return;
-  const iAmHost = snap?.hostId && snap.hostId === myId;
-  const ok = iAmHost && canStart(snap);
-  startGameBtn.disabled = !ok;
+function updateHostStartGating(snap){
+  if (!startBtn || !startReqMsg) return;
+  const isHost = snap.hostId && snap.hostId === myId;
+  const inLobby = snap.phase === "LOBBY";
+  const players = snap.players || [];
+  const playerCount = players.length;
+
+  // 3+ players required
+  const enoughPlayers = playerCount >= 3;
+
+  // readiness rule: everyone except host ready OR >=70% ready including host
+  const readyCount = players.filter(p => p.ready || p.id === snap.hostId).length;
+  const seventy = Math.ceil(playerCount * 0.7);
+  const readyOk = (readyCount >= playerCount) || (readyCount >= seventy);
+
+  const canStart = isHost && inLobby && enoughPlayers && readyOk;
+
+  startBtn.disabled = !canStart;
+  startReqMsg.textContent = canStart
+    ? "Ready to go!"
+    : `Need ≥3 players and ≥70% ready. Current: ${playerCount} players, ${readyCount} ready`;
 }
 
 socket.on("lobby:update", (snap)=>{
@@ -200,26 +200,19 @@ socket.on("lobby:update", (snap)=>{
   $("roomCode").textContent = snap.code ? `Room: ${snap.code}` : "";
 
   $("playerList").innerHTML = snap.players.map(p =>
-    `<li>${escapeHtml(p.name)} ${p.alive?'<span class="muted">(alive)</span>':'<span class="muted">(out)</span>'}${p.ready?' <span class="small" style="color:#15a05c">[Ready]</span>':''}${p.id===snap.hostId?' <strong>(host)</strong>':''}</li>`
+    `<li>${escapeHtml(p.name)} ${p.alive?'<span class="muted">(alive)</span>':'<span class="muted">(out)</span>'}${p.ready?' <span class="small" style="color:#1a9e55">[Ready]</span>':''}${p.id===snap.hostId?' <strong>(host)</strong>':''}</li>`
   ).join("");
 
   $("hostControls").classList.toggle("hidden", !(snap.hostId && snap.hostId===myId));
 
-  if (readyToggleEl) {
-    readyToggleEl.closest(".row")?.classList.toggle("hidden", snap.phase !== "LOBBY");
-  }
+  if (readyToggleEl) readyToggleEl.closest(".row")?.classList.toggle("hidden", snap.phase !== "LOBBY");
 
-  updateStartButton(snap);
+  updateHostStartGating(snap);
 });
 
 socket.on("phase", (snap)=>{
   latestSnap = snap;
-
-  if(snap.phase==="LOBBY"){
-    show("lobby"); 
-    updateStartButton(snap);
-    return;
-  }
+  if(snap.phase==="LOBBY"){ show("lobby"); updateHostStartGating(snap); return; }
 
   if(snap.phase==="HINT" || snap.phase==="IN_PROGRESS"){
     const me = snap.players.find(p=>p.id===myId);
@@ -281,19 +274,19 @@ socket.on("turn", ({ turnId, turnName, seconds })=>{
   }, 1000);
 });
 
-$("submitHintBtn")?.addEventListener("click", ()=>{
+$("submitHintBtn").onclick = ()=>{
   const txt = $("hintInput").value.trim();
   $("hintInput").value = "";
   socket.emit("hint:submit", { code: roomCode, text: txt }, (res)=>{
     if(!res?.ok) alert(res?.error||"Could not submit");
   });
-});
+};
 
 socket.on("hint:update", ({ hints })=>{
   $("hintList").innerHTML = (hints||[]).map(h=>`<li><strong>${escapeHtml(h.name)}:</strong> ${escapeHtml(h.text)}</li>`).join("");
 });
 
-$("submitVoteBtn")?.addEventListener("click", ()=>{
+$("submitVoteBtn").onclick = ()=>{
   const picked = document.querySelector('input[name="voteTarget"]:checked');
   if(!picked) return alert("Pick someone or choose Skip");
   socket.emit("vote:cast", { code: roomCode, targetId: picked.value }, (res)=>{
@@ -304,18 +297,16 @@ $("submitVoteBtn")?.addEventListener("click", ()=>{
       document.querySelectorAll('input[name="voteTarget"]').forEach(r=>r.disabled=true);
     }
   });
-});
+};
 
 socket.on("vote:update", ({ votes })=>{
   $("voteStatus").textContent = `Votes cast: ${votes}`;
 });
 
 // Host buttons
-startGameBtn?.addEventListener("click", () => {
-  socket.emit("host:start", { code: roomCode }, r => {
-    if(!r?.ok) alert(r?.error||"Cannot start");
-  });
-});
+startBtn?.addEventListener("click", () =>
+  socket.emit("host:start", { code: roomCode }, r => { if(!r?.ok) alert(r?.error||"Cannot start"); })
+);
 $("forceNextBtn")?.addEventListener("click", ()=> socket.emit("host:forceNextTurn",{ code: roomCode }));
 $("forceRestartBtn")?.addEventListener("click", ()=> socket.emit("host:forceRestart",{ code: roomCode }));
 $("playAgainBtn")?.addEventListener("click", ()=> socket.emit("host:forceRestart",{ code: roomCode }));
@@ -326,7 +317,7 @@ readyToggleEl?.addEventListener("change", () => {
   socket.emit("player:ready", { code: roomCode, ready: !!readyToggleEl.checked });
 });
 
-// Host settings quick patch
+// Host settings patch
 updateSettingsBtn?.addEventListener("click", ()=>{
   const patch = {};
   if (hostImpostorsEl?.value) patch.impostors = Number(hostImpostorsEl.value);
@@ -337,7 +328,7 @@ updateSettingsBtn?.addEventListener("click", ()=>{
   socket.emit("host:updateSettings", { code: roomCode, patch }, (res)=>{ if(!res?.ok) alert(res?.error||""); });
 });
 
-// Rejoin helper (call after refresh if you kept the name+code)
+// Rejoin helper
 window.tryRejoin = function(name, code){
   if (!name || !code) return;
   socket.emit("player:rejoin", { name, code }, (res)=>{
@@ -349,8 +340,10 @@ window.tryRejoin = function(name, code){
   });
 };
 
-// MAIN MENU BUTTON
+// Main menu
 document.getElementById("mainMenuBtn")?.addEventListener("click", () => {
   try { socket.disconnect(); } catch (e) {}
   window.location.replace(window.location.origin);
 });
+
+function escapeHtml(s){ return (s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
