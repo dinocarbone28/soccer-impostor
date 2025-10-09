@@ -1,14 +1,58 @@
-
-
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Soccer Impostor</title>
+
+  <!-- Basic SEO -->
+  <link rel="canonical" href="https://soccer-impostor.onrender.com/">
+  <meta name="description" content="Play Soccer Impostor — a free, real-time multiplayer social-deduction game. Create or join rooms, drop subtle hints about the secret player, and vote out the impostor!">
+  <meta name="robots" content="index, follow">
+  <meta name="author" content="Dino Carbone">
+
+  <!-- Social share (Open Graph & Twitter) -->
+  <meta property="og:title" content="Soccer Impostor — Multiplayer Social Deduction">
+  <meta property="og:description" content="Find the impostor before time runs out. Real-time hints, voting, and global rooms.">
+  <meta property="og:url" content="https://soccer-impostor.onrender.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="/og-image.png">  <!-- add this file later if you want -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Soccer Impostor — Multiplayer Social Deduction">
+  <meta name="twitter:description" content="Find the impostor before time runs out. Join a room and play now.">
+  <meta name="twitter:image" content="/og-image.png">
+
+  <!-- Mobile / theming -->
+  <meta name="theme-color" content="#0b1220">
+  <link rel="icon" href="/favicon.ico">
+
+  <!-- Performance hints -->
+  <link rel="preload" href="/styles.css?v=1.4.0" as="style">
+  <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>
+
+  <!-- Optional backup verification (leave or replace YOUR_CODE_HERE) -->
+  <meta name="google-site-verification" content="YOUR_CODE_HERE">
+
+  <!-- Styles -->
   <link rel="stylesheet" href="styles.css?v=1.4.0">
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4641989892507140"
-     crossorigin="anonymous"></script>
+
+  <!-- AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4641989892507140" crossorigin="anonymous"></script>
+
+  <!-- Structured data: describe the site as a web game -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "VideoGame",
+    "name": "Soccer Impostor",
+    "url": "https://soccer-impostor.onrender.com/",
+    "applicationCategory": "Game",
+    "operatingSystem": "Web",
+    "genre": ["Party", "Social deduction", "Soccer"],
+    "publisher": { "@type": "Organization", "name": "Soccer Impostor" },
+    "inLanguage": "en"
+  }
+  </script>
 </head>
 <body>
   <header class="topbar">
@@ -110,7 +154,15 @@
     </section>
   </main>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="client.js?v=1.4.0"></script>
+  <!-- Small footer for trust & navigation -->
+  <footer class="muted small" style="text-align:center; margin:32px 0; opacity:.85">
+    <a href="/privacy.html">Privacy</a> ·
+    <a href="/contact.html">Contact</a> ·
+    <a href="/">Home</a>
+  </footer>
+
+  <!-- Scripts (same files, non-blocking) -->
+  <script src="/socket.io/socket.io.js" defer></script>
+  <script src="client.js?v=1.4.0" defer></script>
 </body>
 </html>
