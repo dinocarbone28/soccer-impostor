@@ -74,7 +74,11 @@ function renderLobbyList(items) {
   lobbyListEl.querySelectorAll(".joinFromListBtn").forEach(btn => {
     btn.addEventListener("click", () => {
       const code = btn.getAttribute("data-code");
-      const name = $("joinName")?.value?.trim() || "Player";
+      // ↓ Prefer matchmaking name if present, else fall back to join-by-code name
+      const name =
+        $("matchName")?.value?.trim() ||
+        $("joinName")?.value?.trim() ||
+        "Player";
       socket.emit("player:join", { code, name }, (res) => {
         if (!res?.ok) return alert(res?.error || "Could not join");
         roomCode = code;
@@ -104,7 +108,8 @@ $("createBtn").onclick = () => {
 };
 
 $("joinBtn").onclick = () => {
-  const name = $("joinName").value.trim();
+  // ↓ Also accept matchmaking name if user is coming from that screen
+  const name = $("matchName")?.value?.trim() || $("joinName")?.value?.trim();
   const code = $("joinCode").value.trim().toUpperCase();
   if(!name || code.length!==5) return alert("Enter your name and the 5-letter code");
   socket.emit("player:join", { name, code }, (res)=>{
