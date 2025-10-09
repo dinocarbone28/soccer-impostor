@@ -1,7 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Homepage -->
   <url>
     <loc>https://soccer-impostor.onrender.com/</loc>
     <priority>1.0</priority>
+    <changefreq>daily</changefreq>
+  </url>
+
+  <!-- Privacy Policy -->
+  <url>
+    <loc>https://soccer-impostor.onrender.com/privacy.html</loc>
+    <priority>0.5</priority>
+    <changefreq>monthly</changefreq>
+  </url>
+
+  <!-- Contact Page -->
+  <url>
+    <loc>https://soccer-impostor.onrender.com/contact.html</loc>
+    <priority>0.5</priority>
+    <changefreq>monthly</changefreq>
+  </url>
+
+  <!-- Google Verification (optional but helps discovery) -->
+  <url>
+    <loc>https://soccer-impostor.onrender.com/google1e1def7a720686df.html</loc>
+    <priority>0.1</priority>
+    <changefreq>yearly</changefreq>
   </url>
 </urlset>
