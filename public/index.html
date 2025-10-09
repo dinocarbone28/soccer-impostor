@@ -13,142 +13,124 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
 
-  <!-- Your base CSS (unchanged) -->
-  <link rel="stylesheet" href="styles.css?v=2.1.0">
+  <!-- Your base styles (keep yours) -->
+  <link rel="stylesheet" href="styles.css?v=2.2.0">
 
-  <!-- FIFA-style light theme overrides (visual only) -->
+  <!-- Light (FIFA-style) layer on top of your CSS -->
   <style>
     :root{
       --bg: #ffffff;
-      --ink: #0c1326;
-      --ink-500:#58627c;
-      --brand:#2d6cdf;            /* primary blue accent */
-      --brand-2:#15a05c;          /* secondary green accent */
-      --line:#e7ebf3;
-      --panel:#ffffff;
-      --shadow: 0 10px 30px rgba(14,22,40,.10);
+      --ink: #0c1022;
+      --ink-2: #5b6a8c;
+      --primary: #2256ff;
+      --primary-2:#1a43c7;
+      --card: #f5f7fb;
+      --line: #e6ebf6;
+      --shadow: 0 18px 40px rgba(18, 29, 61, .12);
       --font-display: "Bebas Neue", system-ui, sans-serif;
-      --font-ui: "Rajdhani", system-ui, sans-serif;
     }
-    html,body{background:var(--bg); color:var(--ink); font-family:var(--font-ui);}
-
+    body{ background:var(--bg); color:var(--ink); }
     .topbar{
       display:flex; align-items:center; justify-content:space-between;
-      gap:16px; padding:14px 20px; border-bottom:1px solid var(--line);
-      background:linear-gradient(180deg,#fff, #f9fbff);
+      gap:16px; padding:16px 20px; position:sticky; top:0; z-index:20;
+      background:linear-gradient(180deg,#ffffff, rgba(255,255,255,.86));
+      backdrop-filter:saturate(1.2) blur(6px); border-bottom:1px solid var(--line);
     }
-    .brand{font-family:var(--font-display); font-size:32px; letter-spacing:.5px}
-    .game-tagline p{margin:0; color:var(--ink-500)}
-
-    .container{max-width:1100px; margin:24px auto; padding:0 16px}
-
-    .screen{display:none; opacity:0; transform:translateY(10px);
-      transition:opacity .28s ease, transform .28s ease}
-    .screen.active{display:block; opacity:1; transform:none}
-
-    .menu-hero{display:grid; gap:18px; grid-template-columns:repeat(3,minmax(0,1fr))}
+    .brand{ font-family:var(--font-display); font-size:32px; letter-spacing:.5px }
+    .game-tagline{ color:var(--ink-2); font-family:Rajdhani,system-ui,sans-serif }
+    .container{ max-width:1100px; margin:20px auto; padding:0 16px }
+    .screen{ display:none; opacity:0; transform:translateY(14px);
+      transition:opacity .35s ease, transform .35s ease; }
+    .screen.active{ display:block; opacity:1; transform:none; }
+    .menu-hero{
+      display:grid; gap:18px; grid-template-columns:repeat(3,minmax(0,1fr));
+    }
     .tile{
-      position:relative; min-height:220px; border-radius:18px; overflow:hidden;
-      background:linear-gradient(180deg,#f3f6ff,#fff);
-      border:1px solid var(--line); box-shadow:var(--shadow); cursor:pointer;
-      transition:transform .15s ease, box-shadow .2s ease, filter .2s ease;
+      position:relative; overflow:hidden; border-radius:18px; cursor:pointer;
+      background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow);
+      min-height:200px; transition:transform .15s ease, box-shadow .2s ease, filter .2s ease;
     }
-    .tile:hover{ transform:translateY(-3px); box-shadow:0 18px 50px rgba(14,22,40,.18)}
-    .tile h3{
-      position:absolute; left:16px; bottom:16px; margin:0;
-      font-family:var(--font-display); font-size:30px; letter-spacing:.6px;
-    }
-    .tile .sub{ position:absolute; left:16px; bottom:52px; color:var(--ink-500) }
-    .tile img{ position:absolute; right:-6px; bottom:-4px; height:120%; opacity:.9; pointer-events:none}
+    .tile:hover{ transform:translateY(-3px); box-shadow:0 24px 60px rgba(18,29,61,.18); filter:brightness(1.02) }
+    .tile h3{ position:absolute; left:18px; bottom:18px; margin:0; font-family:var(--font-display); font-size:28px }
+    .tile .sub{ position:absolute; left:18px; bottom:52px; color:var(--ink-2) }
+    .tile img{ position:absolute; right:-8px; bottom:-6px; height:120%; opacity:.9; pointer-events:none; }
 
     .panel{
-      background:var(--panel); border:1px solid var(--line); border-radius:16px;
-      box-shadow:var(--shadow); padding:16px 16px;
+      background:#fff; border:1px solid var(--line); box-shadow:var(--shadow);
+      border-radius:16px; padding:16px; margin-bottom:16px;
     }
-    .subpanel{ background:#fbfcff; border:1px dashed #d9e2f0; border-radius:12px; padding:12px; margin-top:.5rem}
-    .row{display:flex; gap:10px}
-    .row.wrap{flex-wrap:wrap}
-    .row.two > *{flex:1}
-    .space-between{justify-content:space-between}
-    .small{font-size:.9rem}
-    .muted{color:var(--ink-500)}
-
-    .input{ width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:white }
+    .subpanel{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; margin:10px 0 }
+    .row{ display:flex; gap:10px; align-items:center }
+    .row.two > *{ flex:1 }
+    .row.wrap{ flex-wrap:wrap }
+    .space-between{ justify-content:space-between }
+    .list{ list-style:none; padding:0; margin:0; display:grid; gap:10px }
+    .muted{ color:var(--ink-2) }
+    .small{ font-size:.92rem }
+    .input{
+      width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:#fff;
+      font: 600 15px Rajdhani, system-ui, sans-serif;
+    }
     .btn{
-      appearance:none; border:1px solid var(--line); background:#f5f8ff;
-      padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600;
+      padding:12px 16px; border-radius:12px; border:1px solid var(--line); background:#fff; cursor:pointer;
+      font: 700 15px Rajdhani, system-ui, sans-serif; letter-spacing:.3px;
     }
-    .btn:hover{filter:brightness(1.02)}
-    .btn.primary{ background:var(--brand); color:#fff; border-color:#1f58c1}
-    .btn.danger{ background:#ff5b6a; color:#fff; border-color:#e34a59}
-    .btn.small{padding:6px 10px; border-radius:10px}
+    .btn.primary{ background:var(--primary); color:#fff; border-color:transparent }
+    .btn.primary:disabled{ background:#aac2ff; cursor:not-allowed }
+    .btn.danger{ background:#ff2255; color:#fff; border-color:transparent }
+    .voteCard{ display:flex; justify-content:space-between; align-items:center; border:1px solid var(--line);
+      border-radius:12px; padding:10px 12px; margin:6px 0; background:#fff }
+    .hidden{ display:none !important }
+    .stripe{ height:3px; background:linear-gradient(90deg,#dfe7ff,transparent); opacity:.9; border-radius:999px; margin:6px 0 12px }
 
-    .voteCard{
-      display:flex; align-items:center; justify-content:space-between;
-      border:1px solid var(--line); background:#fff; border-radius:12px;
-      padding:10px 12px; margin:6px 0;
-    }
-    .chatLog{ max-height:220px; overflow:auto; background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px}
-    .line .name{font-weight:700}
-
-    .stripe{height:3px; background:linear-gradient(90deg,#a2b7f7,transparent); opacity:.5; border-radius:999px; margin:8px 0 2px}
-
-    @media (max-width: 960px){ .menu-hero{grid-template-columns:1fr} }
-    /* Ensure host start button visually disabled state is clear */
-    #startGameBtn:disabled{opacity:.55; cursor:not-allowed}
+    @media (max-width: 980px){ .menu-hero{ grid-template-columns:1fr } }
   </style>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">⚽ Soccer Impostor</div>
     <div class="room" id="roomCode"></div>
-    <div class="game-tagline"><p>Create, join or match globally — smooth FIFA-style menus.</p></div>
+    <div class="game-tagline"><p>Online multiplayer • create, join, or match globally</p></div>
   </header>
 
   <main class="container">
 
-    <!-- ======================= MAIN MENU ======================= -->
+    <!-- MAIN MENU -->
     <section id="screen-menu" class="screen active">
       <div class="menu-hero">
-        <!-- Create Lobby -->
         <article class="tile" data-nav="screen-create">
-          <img src="/img/create-forward.png" alt="Forward" loading="eager">
+          <img src="/img/create-forward.png" alt="">
           <div class="sub">Host a room with your rules</div>
           <h3>Create Lobby</h3>
         </article>
-
-        <!-- Join by Code -->
         <article class="tile" data-nav="screen-join">
-          <img src="/img/join-midfielder.png" alt="Midfielder" loading="eager">
+          <img src="/img/join-midfielder.png" alt="">
           <div class="sub">Have a 5-letter code? Jump in</div>
           <h3>Join by Code</h3>
         </article>
-
-        <!-- Global Matchmaking -->
         <article class="tile" data-nav="screen-global">
-          <img src="/img/match-keeper.png" alt="Goalkeeper" loading="eager">
+          <img src="/img/match-keeper.png" alt="">
           <div class="sub">Browse public lobbies worldwide</div>
           <h3>Global Matchmaking</h3>
         </article>
       </div>
     </section>
 
-    <!-- ======================= CREATE LOBBY ======================= -->
+    <!-- CREATE LOBBY -->
     <section id="screen-create" class="screen">
+      <div class="row"><button class="btn" data-nav="screen-menu">← Back</button><h2>Create Lobby</h2></div>
+      <div class="stripe"></div>
       <div class="panel">
-        <h2>Create Lobby (Host)</h2>
-        <div class="stripe"></div>
         <div class="row"><input id="hostName" class="input" placeholder="Your name"></div>
         <div class="row two">
           <div><label># of Impostors</label><input id="hostImpostors" class="input" type="number" min="1" value="1"></div>
           <div><label>Hint Timer (sec)</label><input id="hostHintSec" class="input" type="number" min="5" value="30"></div>
         </div>
         <div class="row two">
-          <div><label>Public Lobby</label><br><input id="hostPublic" type="checkbox" checked></div>
+          <div><label><input id="hostPublic" type="checkbox" checked> Public lobby</label></div>
           <div><label>Region</label>
             <select id="hostRegion" class="input">
-              <option>GLOBAL</option><option>NA</option><option>SA</option>
-              <option>EU</option><option>AF</option><option>AS</option><option>OC</option>
+              <option>GLOBAL</option><option>NA</option><option>SA</option><option>EU</option><option>AF</option><option>AS</option><option>OC</option>
             </select>
           </div>
         </div>
@@ -156,49 +138,39 @@
           <div><label>Max Players (3–10)</label><input id="hostMaxPlayers" class="input" type="number" min="3" max="10" value="10"></div>
           <div></div>
         </div>
-        <div class="row" style="gap:.5rem">
-          <button class="btn" data-nav="screen-menu">Back</button>
-          <button id="createBtn" class="btn primary">Create Room</button>
-        </div>
+        <button id="createBtn" class="btn primary">Create Room</button>
       </div>
     </section>
 
-    <!-- ======================= JOIN BY CODE ======================= -->
+    <!-- JOIN BY CODE -->
     <section id="screen-join" class="screen">
+      <div class="row"><button class="btn" data-nav="screen-menu">← Back</button><h2>Join by Code</h2></div>
+      <div class="stripe"></div>
       <div class="panel">
-        <h2>Join by Code</h2>
-        <div class="stripe"></div>
         <input id="joinName" class="input" placeholder="Your name">
         <input id="joinCode" class="input" placeholder="ABCDE" maxlength="5">
-        <div class="row" style="gap:.5rem">
-          <button class="btn" data-nav="screen-menu">Back</button>
-          <button id="joinBtn" class="btn primary">Join</button>
-        </div>
+        <button id="joinBtn" class="btn">Join</button>
       </div>
     </section>
 
-    <!-- ======================= GLOBAL MATCHMAKING ======================= -->
+    <!-- GLOBAL MATCHMAKING -->
     <section id="screen-global" class="screen">
+      <div class="row"><button class="btn" data-nav="screen-menu">← Back</button><h2>Global Matchmaking</h2></div>
+      <div class="stripe"></div>
       <div class="panel">
-        <h2>Global Matchmaking</h2>
-        <div class="stripe"></div>
         <div class="row wrap" style="gap:.5rem;margin:.25rem 0 .75rem">
           <input id="matchName" class="input" placeholder="Your matchmaking name (shown to others)" style="max-width:280px">
           <button id="lobbyRefreshBtn" class="btn">Refresh</button>
           <select id="lobbyRegionFilter" class="input" style="max-width:180px">
-            <option value="">All Regions</option>
-            <option>GLOBAL</option><option>NA</option><option>SA</option>
-            <option>EU</option><option>AF</option><option>AS</option><option>OC</option>
+            <option value="">All Regions</option><option>GLOBAL</option><option>NA</option><option>SA</option><option>EU</option><option>AF</option><option>AS</option><option>OC</option>
           </select>
           <label class="small muted"><input id="lobbyOnlyOpen" type="checkbox" style="margin-right:.4rem">Only open lobbies</label>
-          <label class="muted small">Updates live as rooms change.</label>
         </div>
         <ul id="lobbyList" class="list"></ul>
-        <div class="row" style="margin-top:.5rem"><button class="btn" data-nav="screen-menu">Back</button></div>
       </div>
     </section>
 
-    <!-- ======================= LOBBY + GAME SCREENS (logic unchanged) ======================= -->
+    <!-- ====== EXISTING GAME VIEWS (unchanged IDs) ====== -->
     <section id="lobby" class="view">
       <div class="panel">
         <h2>Lobby</h2>
@@ -210,13 +182,14 @@
       </div>
       <div id="hostControls" class="panel hidden">
         <h3>Host Controls</h3>
-        <div class="row wrap">
+        <div class="row wrap" style="gap:8px">
           <button id="startGameBtn" class="btn primary" disabled>Start Game</button>
           <button id="forceRestartBtn" class="btn danger">Play Again (Randomize)</button>
           <button id="forceNextBtn" class="btn">Force Next Turn</button>
           <button id="mainMenuBtn" class="btn">Main Menu</button>
         </div>
-        <div class="row wrap" style="margin-top:.5rem">
+        <p id="startReqMsg" class="small muted" style="margin:.5rem 0 0"></p>
+        <div class="row wrap" style="margin-top:.75rem">
           <button id="updateSettingsBtn" class="btn">Update Settings (Host)</button>
         </div>
       </div>
@@ -263,7 +236,6 @@
         <button id="playAgainBtn" class="btn primary">Play Again (Host)</button>
       </div>
     </section>
-
   </main>
 
   <footer class="muted small" style="text-align:center; margin:32px 0; opacity:.85">
@@ -276,21 +248,12 @@
   <script src="/socket.io/socket.io.js" defer></script>
   <script src="client.js?v=1.6.2" defer></script>
 
-  <!-- Tiny SPA nav for the menu tiles only (game screens still use client.js show()) -->
+  <!-- SPA nav (visual only; doesn’t touch game logic) -->
   <script>
     (function(){
-      const screens = ["screen-menu","screen-create","screen-join","screen-global"];
-      function activate(id){
-        screens.forEach(s => {
-          const el = document.getElementById(s);
-          if (!el) return;
-          el.classList.toggle("active", s===id);
-        });
-      }
-      document.addEventListener("click", (e)=>{
-        const trg = e.target.closest("[data-nav]");
-        if (trg) { activate(trg.getAttribute("data-nav")); }
-      });
+      const screens=["screen-menu","screen-create","screen-join","screen-global"];
+      function activate(id){ screens.forEach(s=>{ const el=document.getElementById(s); if(el) el.classList.toggle("active", s===id); }); }
+      document.addEventListener("click", e => { const t=e.target.closest("[data-nav]"); if(t) activate(t.getAttribute("data-nav")); });
     })();
   </script>
 </body>
