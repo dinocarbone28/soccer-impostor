@@ -118,13 +118,22 @@ function startGame(code, keepRotation = false, randomize = false) {
   // reset everyone alive; optionally re-randomize roles/secret
   ids.forEach(id => { r.players[id].alive = true; r.players[id].role = "innocent"; });
 
-  // assign roles (random each start; capped)
-  const shuffled = shuffle(ids);
-  const maxImpostors = Math.max(1, Math.floor(ids.length / 3));
-  const impostorCount = Math.min(r.settings.impostors || 1, maxImpostors);
-  const impostors = new Set(shuffled.slice(0, impostorCount));
-  ids.forEach(id => { r.players[id].role = impostors.has(id) ? "impostor" : "innocent"; });
+ // assign roles (fully randomized, always reshuffled each start)
+const shuffled = shuffle([...ids]); // fresh shuffle each round
+const maxImpostors = Math.max(1, Math.floor(ids.length / 3));
+const impostorCount = Math.min(r.settings.impostors || 1, maxImpostors);
 
+// pick completely random impostors
+const impostors = new Set();
+while (impostors.size < impostorCount) {
+  const randomId = shuffled[Math.floor(Math.random() * shuffled.length)];
+  impostors.add(randomId);
+}
+
+// assign roles
+ids.forEach(id => {
+  r.players[id].role = impostors.has(id) ? "impostor" : "innocent";
+});
   // choose secret (ensure different from last if replay/randomize)
   const prev = r.lastSecret || null;
   r.secretPlayer = randomize ? pickNewSecret(prev) : ALL_PLAYERS[Math.floor(Math.random()*ALL_PLAYERS.length)];
