@@ -164,7 +164,12 @@ $("forceRestartBtn").onclick = ()=> socket.emit("host:forceRestart",{ code: room
 $("playAgainBtn").onclick  = ()=> socket.emit("host:forceRestart",{ code: roomCode });
 // MAIN MENU BUTTON — return to home screen
 document.getElementById("mainMenuBtn")?.addEventListener("click", () => {
-  window.location.href = "/"; // reloads to home screen (Create Room / Join Room)
+  try {
+    socket.disconnect(); // end the current session
+  } catch (e) {}
+
+  // force reload from scratch to show the main screen
+  window.location.replace(window.location.origin);
 });
 // helpers
 function escapeHtml(s){ return (s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
