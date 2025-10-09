@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://soccer-impostor.onrender.com/sitemap.xml
