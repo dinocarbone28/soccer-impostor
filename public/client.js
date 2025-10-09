@@ -162,6 +162,9 @@ $("startGameBtn").onclick  = ()=> socket.emit("host:start",        { code: roomC
 $("forceNextBtn").onclick  = ()=> socket.emit("host:forceNextTurn",{ code: roomCode });
 $("forceRestartBtn").onclick = ()=> socket.emit("host:forceRestart",{ code: roomCode }); // randomize roles & secret
 $("playAgainBtn").onclick  = ()=> socket.emit("host:forceRestart",{ code: roomCode });
-
+// MAIN MENU BUTTON — return to home screen
+document.getElementById("mainMenuBtn")?.addEventListener("click", () => {
+  window.location.href = "/"; // reloads to home screen (Create Room / Join Room)
+});
 // helpers
 function escapeHtml(s){ return (s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
