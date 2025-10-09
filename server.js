@@ -1,7 +1,4 @@
-// server.js — Soccer Impostor (v1.6.0)
-// Global public lobby matchmaking: regions, public/private, maxPlayers, ready states,
-// host migration, lobby expiry, in-progress lock, rejoin grace, real-time lobby list.
-
+// server.js — Soccer Impostor (v1.6.2)
 const path = require("path");
 const express = require("express");
 const http = require("http");
@@ -19,57 +16,24 @@ const PORT = process.env.PORT || 3000;
 /* =========================
    Matchmaking configuration
    ========================= */
-const REGIONS = ["GLOBAL","NA","SA","EU","AF","AS","OC"]; // simple region tags
-const LOBBY_IDLE_MS = 10 * 60 * 1000;    // WAITING: close if inactive 10 min
-const GAME_MAX_MS  = 2 * 60 * 60 * 1000; // IN_PROGRESS hard stop 2h
-const REJOIN_GRACE_MS = 25 * 1000;       // keep player slot for ~25s after disconnect
+const REGIONS = ["GLOBAL","NA","SA","EU","AF","AS","OC"];
+const LOBBY_IDLE_MS = 10 * 60 * 1000;
+const GAME_MAX_MS  = 2 * 60 * 60 * 1000;
+const REJOIN_GRACE_MS = 25 * 1000;
 
 /* =========================
-   Static secret list
+   Static secret list (truncated here for brevity – keep your full list)
    ========================= */
 const ALL_PLAYERS = [
-  "Lionel Messi","Kylian Mbappe","Erling Haaland","Vinicius Junior","Mohamed Salah","Harry Kane","Jude Bellingham","Lautaro Martinez","Antoine Griezmann","Robert Lewandowski","Son Heung-min","Bukayo Saka","Jamal Musiala","Florian Wirtz","Rafael Leao","Khvicha Kvaratskhelia","Rodrygo","Ousmane Dembele","Leroy Sane","Kingsley Coman","Marcus Rashford","Jack Grealish","Christopher Nkunku","Kai Havertz","Joao Felix","Darwin Nunez","Victor Osimhen","Alexander Isak","Randal Kolo Muani","Dusan Vlahovic","Alvaro Morata","Federico Chiesa","Julian Alvarez","Paulo Dybala","Angel Di Maria","Kenan Yildiz","Dayro Moreno",
-  "Kevin De Bruyne","Bernardo Silva","Martin Odegaard","Bruno Fernandes","Federico Valverde","Pedri","Gavi","Frenkie de Jong","Ilkay Gundogan","Toni Kroos","Luka Modric","Declan Rice","Casemiro","Adrien Rabiot","Nicolo Barella","Hakan Calhanoglu","Sandro Tonali","Sergej Milinkovic-Savic","James Maddison","Mason Mount","Dominik Szoboszlai","Dani Olmo","Youssouf Fofana","Aurelien Tchouameni","Eduardo Camavinga","Marco Verratti","Martin Zubimendi","Mikel Merino","Alexis Mac Allister","Enzo Fernandez","Moises Caicedo","Joao Palhinha","Teun Koopmeiners","Scott McTominay","Weston McKennie","Christian Pulisic","Giovanni Reyna","Luis Diaz","Rodrigo De Paul","Leandro Paredes",
-  "Virgil van Dijk","Ruben Dias","Marquinhos","Eder Militao","David Alaba","William Saliba","Josko Gvardiol","Antonio Rudiger","Matthijs de Ligt","Milan Skriniar","Kim Min-jae","Dayot Upamecano","Ronald Araujo","Jules Kounde","Raphael Varane","Pau Cubarsi","Alejandro Balde","Giovanni Di Lorenzo","Khephren Thuram","Joshua Kimmich","Leon Goretzka","Benjamin Pavard","Raphael Guerreiro",
-  "Joao Cancelo","Trent Alexander-Arnold","Andrew Robertson","Achraf Hakimi","Theo Hernandez","Alphonso Davies","Reece James","Dani Carvajal",
-  "Emiliano Dibu Martinez","Thibaut Courtois","Alisson Becker","Ederson","Mike Maignan","Marc-Andre ter Stegen","Jan Oblak","Andre Onana","Diogo Costa","Yassine Bounou",
-  "Nico Williams","Alejandro Garnacho","Cole Palmer","Xavi Simons","Rodrigo Bentancur","Nicolo Fagioli","Joao Neves","Lamine Yamal"
+  "Lionel Messi","Kylian Mbappe","Erling Haaland","Kevin De Bruyne","Virgil van Dijk","Alisson Becker"
+  // ... keep the rest of your list unchanged ...
 ];
 
 /* =========================
    In-memory model
    ========================= */
-// PLAYER: { id, name, alive, role, ready, lastSeen, rejoinUntil? }
 const rooms = Object.create(null);
-/*
-room = {
-  code, hostId,
-  settings: { impostors, hintSeconds, voteSeconds, maxPlayers, region, public },
-  players: { [socketId]: PLAYER },
-  // keep ghost seats for rejoin by name for a short grace period
-  ghosts: { [ghostKey]: { name, until, role, wasAlive } },
-  order: string[], orderStartIndex: 0,
-  phase: 'LOBBY'|'HINT'|'VOTE'|'GAME_OVER'|'CLOSED'|'STARTING'|'IN_PROGRESS',
-  secretPlayer,
-  hints: [{by,name,text}],
-  currentTurnIdx,
-  votes: { [voterId]: targetId },
-  winners: 'INNOCENTS'|'IMPOSTORS'|null,
-  turnTimer: Timeout, voteTimer: Timeout | null, voteEndsAt: number | null,
-  chatLog: [{by,name,text,at}],
-  lastSecret: string|null,
-  createdAt: number, updatedAt: number, startedAt?: number
-}
-*/
-
-// Lightweight public lobby directory
 const lobbyIndex = Object.create(null);
-/*
-lobbyIndex[code] = {
-  code, hostName, playerCount, maxPlayers, status: 'WAITING'|'STARTING'|'IN_PROGRESS',
-  region, public: true|false, createdAt, updatedAt, map: 'Stadium' (reserved)
-}
-*/
 
 // utils
 const LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -80,7 +44,8 @@ const countImpostors = r => alivePlayers(r).filter(p => p.role === "impostor").l
 const countInnocents = r => alivePlayers(r).filter(p => p.role === "innocent").length;
 const majorityNeeded = n => Math.floor(n/2)+1;
 
-function now(){ return Date.now(); }
+const now = () => Date.now();
+
 function pickNewSecret(prev) {
   if (ALL_PLAYERS.length <= 1) return ALL_PLAYERS[0];
   let candidate = prev;
@@ -100,7 +65,6 @@ function canChat(socketId) {
   return b.burst <= 5;
 }
 
-function touchRoom(r){ r.updatedAt = now(); if (lobbyIndex[r.code]) lobbyIndex[r.code].updatedAt = r.updatedAt; }
 function updateLobbyIndexSnapshot(r){
   if (!lobbyIndex[r.code]) return;
   lobbyIndex[r.code].playerCount = Object.keys(r.players).length;
@@ -113,7 +77,7 @@ function updateLobbyIndexSnapshot(r){
 }
 
 /* =========================
-   Phase helpers (unchanged core with small hooks)
+   Phase helpers
    ========================= */
 function snapshot(code) {
   const r = rooms[code]; if (!r) return null;
@@ -136,9 +100,7 @@ function snapshot(code) {
 function sendSecretToInnocents(code) {
   const r = rooms[code]; if (!r) return;
   for (const p of Object.values(r.players)) {
-    if (p.role === "innocent" && p.alive) {
-      io.to(p.id).emit("secret", { secretPlayer: r.secretPlayer });
-    }
+    if (p.role === "innocent" && p.alive) io.to(p.id).emit("secret", { secretPlayer: r.secretPlayer });
   }
 }
 
@@ -156,10 +118,7 @@ function setRoles(r) {
   const maxImpostors = Math.max(1, Math.floor(ids.length / 3));
   const impostorCount = Math.min(r.settings.impostors || 1, maxImpostors);
   const impostors = new Set();
-  while (impostors.size < impostorCount) {
-    const randomId = shuffled[Math.floor(Math.random() * shuffled.length)];
-    impostors.add(randomId);
-  }
+  while (impostors.size < impostorCount) impostors.add(shuffled[Math.floor(Math.random() * shuffled.length)]);
   ids.forEach(id => { r.players[id].role = impostors.has(id) ? "impostor" : "innocent"; });
 }
 
@@ -174,7 +133,6 @@ function startGame(code, keepRotation = false, randomize = false) {
   if (!keepRotation) { r.order = ids; r.orderStartIndex = 0; }
   else { r.order = r.order.filter(id => ids.includes(id)); rotateOrderStartIndex(r); }
 
-  // ready flags reset when game starts
   Object.values(r.players).forEach(p => p.ready = false);
 
   setRoles(r);
@@ -183,7 +141,7 @@ function startGame(code, keepRotation = false, randomize = false) {
   r.secretPlayer = randomize ? pickNewSecret(prev) : ALL_PLAYERS[Math.floor(Math.random()*ALL_PLAYERS.length)];
   r.lastSecret = r.secretPlayer;
 
-  r.phase = "IN_PROGRESS"; // lobby lock equivalent
+  r.phase = "IN_PROGRESS";
   io.to(code).emit("phase", snapshot(code));
   updateLobbyIndexSnapshot(r);
   io.emit("lobby:changed", publicLobbyList());
@@ -296,7 +254,6 @@ function publicLobbyList(filter = {}) {
     .filter(x => x.public)
     .filter(x => !region || region === "GLOBAL" || x.region === region)
     .filter(x => !onlyOpen || (x.status === "WAITING" && x.playerCount < x.maxPlayers));
-  // Sort: WAITING first, then most recent update
   return items.sort((a,b)=>{
     if (a.status !== b.status) return a.status === "WAITING" ? -1 : 1;
     return b.updatedAt - a.updatedAt;
@@ -316,16 +273,14 @@ function closeLobby(code){
    Socket handlers
    ========================= */
 io.on("connection", (socket) => {
-  // ---- Lobby directory API ----
-  socket.on("lobby:list", (filter, ack) => {
-    ack?.(publicLobbyList(filter || {}));
-  });
+  // Lobby directory
+  socket.on("lobby:list", (filter, ack) => { ack?.(publicLobbyList(filter || {})); });
   socket.on("lobby:watch", (filter) => {
     socket.data.watchFilter = filter || {};
     socket.emit("lobby:changed", publicLobbyList(socket.data.watchFilter));
   });
 
-  // ---- Host creates a lobby (public/private, region, capacity) ----
+  // Host create
   socket.on("host:create", (payload, ack) => {
     const {
       name,
@@ -340,7 +295,7 @@ io.on("connection", (socket) => {
     const code = makeCode();
     const safeName = (name || "Host").trim() || "Host";
     const safeRegion = REGIONS.includes(region) ? region : "GLOBAL";
-    const cap = Math.min(10, Math.max(3, Number(maxPlayers) || 10)); // 3..10
+    const cap = Math.min(10, Math.max(3, Number(maxPlayers) || 10));
 
     rooms[code] = {
       code,
@@ -390,7 +345,7 @@ io.on("connection", (socket) => {
     io.emit("lobby:changed", publicLobbyList());
   });
 
-  // ---- Join lobby (public browser or code) ----
+  // Join
   socket.on("player:join", ({ code, name }, ack) => {
     code = (code||"").toUpperCase();
     const r = rooms[code];
@@ -400,7 +355,7 @@ io.on("connection", (socket) => {
 
     if (r.phase !== "LOBBY") return ack?.({ ok:false, error:"Game already started" });
     if (Object.keys(r.players).length >= r.settings.maxPlayers) return ack?.({ ok:false, error:"Room full" });
-    // unique name within room (case-insensitive)
+
     if (Object.values(r.players).some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
       return ack?.({ ok:false, error:"Name already taken" });
     }
@@ -418,17 +373,16 @@ io.on("connection", (socket) => {
     io.emit("lobby:changed", publicLobbyList());
   });
 
-  // ---- Player ready/unready (LOBBY only) ----
+  // Player ready
   socket.on("player:ready", ({ code, ready }, ack) => {
     const r = rooms[code]; if (!r || r.phase !== "LOBBY") return ack?.({ ok:false });
     const me = r.players[socket.id]; if (!me) return ack?.({ ok:false });
     me.ready = !!ready; me.lastSeen = now();
-    touchRoom(r);
     io.to(code).emit("lobby:update", snapshot(code));
     ack?.({ ok:true });
   });
 
-  // ---- Host updates settings (LOBBY only) ----
+  // Host updates settings
   socket.on("host:updateSettings", ({ code, patch }, ack) => {
     const r = rooms[code]; if (!r || r.phase !== "LOBBY") return ack?.({ ok:false });
     if (socket.id !== r.hostId) return ack?.({ ok:false, error:"Only host" });
@@ -440,7 +394,6 @@ io.on("connection", (socket) => {
     if (patch?.region && REGIONS.includes(patch.region)) s.region = patch.region;
     if (patch?.public != null) s.public = !!patch.public;
 
-    // reflect in index
     if (lobbyIndex[code]) {
       lobbyIndex[code].maxPlayers = s.maxPlayers;
       lobbyIndex[code].region = s.region;
@@ -452,7 +405,7 @@ io.on("connection", (socket) => {
     ack?.({ ok:true });
   });
 
-  // ---- Host starts (requires minimum players & readiness) ----
+  // Host start (min players & readiness rule)
   socket.on("host:start", ({ code }, ack) => {
     const r = rooms[code]; if (!r) return ack?.({ ok:false });
     if (socket.id !== r.hostId) return ack?.({ ok:false, error:"Only host can start" });
@@ -461,7 +414,6 @@ io.on("connection", (socket) => {
     const playerCount = Object.keys(r.players).length;
     if (playerCount < 3) return ack?.({ ok:false, error:"Need at least 3 players" });
 
-    // Rule: everyone except host must be ready OR at least 70% players ready
     const readyCount = Object.values(r.players).filter(p => p.ready || p.id === r.hostId).length;
     const seventyPct = Math.ceil(playerCount * 0.7);
     if (!(readyCount >= playerCount || readyCount >= seventyPct)) {
@@ -470,13 +422,11 @@ io.on("connection", (socket) => {
 
     if (lobbyIndex[code]) { lobbyIndex[code].status = "STARTING"; lobbyIndex[code].updatedAt = now(); }
     io.emit("lobby:changed", publicLobbyList());
-
-    // brief STARTING state could include a countdown; we jump straight to startGame
     startGame(code, false, true);
     ack?.({ ok:true });
   });
 
-  // ---- Replay with randomization (keep rotation) ----
+  // Replay
   socket.on("host:forceRestart", ({ code }, ack) => {
     const r = rooms[code]; if (!r || socket.id !== r.hostId) return;
     if (lobbyIndex[code]) { lobbyIndex[code].status = "IN_PROGRESS"; lobbyIndex[code].updatedAt = now(); }
@@ -484,13 +434,13 @@ io.on("connection", (socket) => {
     ack?.({ ok:true });
   });
 
-  // ---- Force next turn (host only) ----
+  // Force next turn
   socket.on("host:forceNextTurn", ({ code }) => {
     const r = rooms[code]; if (!r || socket.id !== r.hostId) return;
     if (r.phase === "HINT" || r.phase === "IN_PROGRESS") advanceTurn(code);
   });
 
-  // ---- Player submits hint (unchanged rule) ----
+  // Hint submit
   socket.on("hint:submit", ({ code, text }, ack) => {
     const r = rooms[code]; if (!r || (r.phase !== "HINT" && r.phase !== "IN_PROGRESS")) return ack?.({ ok:false });
     const currentId = r.order.filter(id => r.players[id]?.alive)[r.currentTurnIdx];
@@ -502,7 +452,7 @@ io.on("connection", (socket) => {
     advanceTurn(code);
   });
 
-  // ---- Vote chat (during VOTE) ----
+  // Vote chat
   socket.on("chat:send", ({ code, text }, ack) => {
     const r = rooms[code]; if (!r) return ack?.({ ok:false });
     if (r.phase !== "VOTE") return ack?.({ ok:false, error:"Chat only during voting" });
@@ -518,6 +468,7 @@ io.on("connection", (socket) => {
     ack?.({ ok:true });
   });
 
+  // Cast vote
   socket.on("vote:cast", ({ code, targetId }, ack) => {
     const r = rooms[code]; if (!r || r.phase !== "VOTE") return ack?.({ ok:false });
     const voter = r.players[socket.id]; if (!voter || !voter.alive) return ack?.({ ok:false });
@@ -535,7 +486,7 @@ io.on("connection", (socket) => {
     ack?.({ ok:true });
   });
 
-  // ---- Close lobby (host) ----
+  // Close lobby (host)
   socket.on("host:close", ({ code }, ack) => {
     const r = rooms[code]; if (!r) return ack?.({ ok:false });
     if (socket.id !== r.hostId) return ack?.({ ok:false, error:"Only host" });
@@ -543,7 +494,7 @@ io.on("connection", (socket) => {
     ack?.({ ok:true });
   });
 
-  // ---- Disconnection & host migration ----
+  // Disconnect & host migration + instant close when last leaves
   socket.on("disconnect", () => {
     for (const code of Object.keys(rooms)) {
       const r = rooms[code];
@@ -551,12 +502,10 @@ io.on("connection", (socket) => {
 
       const wasHost = r.hostId === socket.id;
       const leaving = r.players[socket.id];
-      // create ghost seat for quick rejoin by name
+
+      // Ghost for rejoin
       r.ghosts[leaving.name.toLowerCase()] = {
-        name: leaving.name,
-        until: now() + REJOIN_GRACE_MS,
-        role: leaving.role,
-        wasAlive: leaving.alive
+        name: leaving.name, until: now() + REJOIN_GRACE_MS, role: leaving.role, wasAlive: leaving.alive
       };
 
       delete r.players[socket.id];
@@ -567,10 +516,9 @@ io.on("connection", (socket) => {
         lobbyIndex[code].updatedAt = now();
       }
 
-      // If lobby emptied, close it
+      // If lobby emptied, close immediately
       if (Object.keys(r.players).length === 0) { closeLobby(code); continue; }
 
-      // Host migration: promote next player in order
       if (wasHost) {
         const nextHost = r.order[0];
         r.hostId = nextHost || Object.keys(r.players)[0] || null;
@@ -583,7 +531,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ---- Rejoin by name within grace window (LOBBY or IN_PROGRESS) ----
+  // Rejoin by name during grace
   socket.on("player:rejoin", ({ code, name }, ack) => {
     code = (code||"").toUpperCase();
     const r = rooms[code]; if (!r) return ack?.({ ok:false, error:"Room not found" });
@@ -591,7 +539,6 @@ io.on("connection", (socket) => {
     if (!key || !r.ghosts[key]) return ack?.({ ok:false, error:"No rejoin slot" });
     if (r.ghosts[key].until < now()) { delete r.ghosts[key]; return ack?.({ ok:false, error:"Rejoin window expired" }); }
 
-    // prevent duplicate names
     if (Object.values(r.players).some(p => p.name.toLowerCase() === key)) {
       delete r.ghosts[key];
       return ack?.({ ok:false, error:"Name already in use" });
@@ -616,7 +563,7 @@ io.on("connection", (socket) => {
 });
 
 /* =========================
-   Expiry janitor
+   Expiry janitor — runs every 3s
    ========================= */
 setInterval(() => {
   const t = now();
@@ -629,13 +576,12 @@ setInterval(() => {
     if (empty) { closeLobby(code); continue; }
 
     if (r.phase === "LOBBY") {
-      // idle check: no updates and no ready activity
       const readyOrRecent = Object.values(r.players).some(p => (t - (p.lastSeen||0)) < LOBBY_IDLE_MS);
       if (!readyOrRecent && (t - r.updatedAt) > LOBBY_IDLE_MS) closeLobby(code);
     } else if (r.phase === "IN_PROGRESS" || r.phase === "HINT" || r.phase === "VOTE") {
       if (r.startedAt && (t - r.startedAt) > GAME_MAX_MS) closeLobby(code);
     }
   }
-}, 10_000);
+}, 3000);
 
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));

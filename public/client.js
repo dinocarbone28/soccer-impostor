@@ -1,33 +1,31 @@
-// client.js — Soccer Impostor (v1.6.0)
-// Adds: public/private lobby, region/filtering, max players, ready toggle,
-// host settings, in-progress lock, rejoin, better lobby browser.
+// client.js — Soccer Impostor (v1.6.2)
 
 const socket = io();
 const $ = id => document.getElementById(id);
 
-// ----- DOM refs (existing + new) -----
+// ----- DOM refs -----
 const lobbyListEl = $("lobbyList");
 const lobbyRefreshBtn = $("lobbyRefreshBtn");
-const regionFilterEl = $("lobbyRegionFilter");     // NEW (optional in HTML)
-const onlyOpenFilterEl = $("lobbyOnlyOpen");       // NEW (optional in HTML)
+const regionFilterEl = $("lobbyRegionFilter");
+const onlyOpenFilterEl = $("lobbyOnlyOpen");
 
 const voteCountdownEl = $("voteCountdown");
 const chatLogEl = $("chatLog");
 const chatInputEl = $("chatInput");
 const chatSendBtn = $("chatSendBtn");
 
-// Start screen inputs (existing)
+// Start screen inputs
 const hostNameEl = $("hostName");
 const hostImpostorsEl = $("hostImpostors");
 const hostHintSecEl = $("hostHintSec");
-// NEW host controls
-const hostPublicEl = $("hostPublic");      // checkbox
-const hostRegionEl = $("hostRegion");      // select
-const hostMaxPlayersEl = $("hostMaxPlayers"); // number
+const hostPublicEl = $("hostPublic");
+const hostRegionEl = $("hostRegion");
+const hostMaxPlayersEl = $("hostMaxPlayers");
 
 // Lobby view
-const readyToggleEl = $("readyToggle");     // NEW checkbox for players
-const updateSettingsBtn = $("updateSettingsBtn"); // NEW button for host (optional)
+const readyToggleEl = $("readyToggle");
+const updateSettingsBtn = $("updateSettingsBtn");
+const startGameBtn = $("startGameBtn");
 
 // Game/phase globals
 let voteTimerInt = null;
@@ -40,6 +38,23 @@ let latestSnap = null;
 
 const screens = { start:$("start"), lobby:$("lobby"), hint:$("hint"), vote:$("vote"), over:$("over") };
 function show(name){ for(const k of Object.keys(screens)) screens[k].classList.remove("active"); screens[name].classList.add("active"); }
+
+// Utility
+function escapeHtml(s){ return (s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+function pctReady(snap){
+  if (!snap) return 0;
+  const total = snap.players.length;
+  if (total === 0) return 0;
+  const hostId = snap.hostId;
+  const ready = snap.players.filter(p => p.ready || p.id === hostId).length;
+  return Math.round((ready / total) * 100);
+}
+function canStart(snap){
+  if (!snap) return false;
+  const cnt = snap.players.length;
+  if (cnt < 3) return false;
+  return pctReady(snap) >= 70; // same rule as server
+}
 
 // ----- Lobby browser rendering -----
 function renderLobbyList(items) {
@@ -74,11 +89,8 @@ function renderLobbyList(items) {
   lobbyListEl.querySelectorAll(".joinFromListBtn").forEach(btn => {
     btn.addEventListener("click", () => {
       const code = btn.getAttribute("data-code");
-      // ↓ Prefer matchmaking name if present, else fall back to join-by-code name
-      const name =
-        $("matchName")?.value?.trim() ||
-        $("joinName")?.value?.trim() ||
-        "Player";
+      // Prefer matchmaking name if present
+      const name = $("matchName")?.value?.trim() || $("joinName")?.value?.trim() || "Player";
       socket.emit("player:join", { code, name }, (res) => {
         if (!res?.ok) return alert(res?.error || "Could not join");
         roomCode = code;
@@ -90,7 +102,7 @@ function renderLobbyList(items) {
 }
 
 // ----- Start screen actions -----
-$("createBtn").onclick = () => {
+$("createBtn")?.addEventListener("click", () => {
   const name = hostNameEl.value.trim();
   const impostors = Number(hostImpostorsEl.value || 1);
   const hintSeconds = Number(hostHintSecEl.value || 30);
@@ -103,12 +115,12 @@ $("createBtn").onclick = () => {
     if(!res?.ok) return alert(res?.error||"Could not create");
     roomCode = res.code;
     $("roomCode").textContent = `Room: ${roomCode}`;
+    // Auto-navigate to actual lobby
     show("lobby");
   });
-};
+});
 
-$("joinBtn").onclick = () => {
-  // ↓ Also accept matchmaking name if user is coming from that screen
+$("joinBtn")?.addEventListener("click", () => {
   const name = $("matchName")?.value?.trim() || $("joinName")?.value?.trim();
   const code = $("joinCode").value.trim().toUpperCase();
   if(!name || code.length!==5) return alert("Enter your name and the 5-letter code");
@@ -118,7 +130,7 @@ $("joinBtn").onclick = () => {
     $("roomCode").textContent = `Room: ${roomCode}`;
     show("lobby");
   });
-};
+});
 
 // ----- Global lobby feed -----
 function requestLobbyList(){
@@ -128,7 +140,7 @@ function requestLobbyList(){
   };
   socket.emit("lobby:list", filter, (items) => renderLobbyList(items));
 }
-if (lobbyRefreshBtn) lobbyRefreshBtn.addEventListener("click", requestLobbyList);
+lobbyRefreshBtn?.addEventListener("click", requestLobbyList);
 regionFilterEl?.addEventListener("change", () => socket.emit("lobby:watch", { region: regionFilterEl.value, onlyOpen: !!onlyOpenFilterEl?.checked }));
 onlyOpenFilterEl?.addEventListener("change", () => socket.emit("lobby:watch", { region: regionFilterEl?.value, onlyOpen: !!onlyOpenFilterEl?.checked }));
 
@@ -176,27 +188,38 @@ socket.on("chat:new", (m) => appendChatLine(m.name, m.text));
 // ----- Phase/snap handling -----
 socket.on("connect", ()=>{ myId = socket.id; });
 
+function updateStartButton(snap){
+  if (!startGameBtn) return;
+  const iAmHost = snap?.hostId && snap.hostId === myId;
+  const ok = iAmHost && canStart(snap);
+  startGameBtn.disabled = !ok;
+}
+
 socket.on("lobby:update", (snap)=>{
   latestSnap = snap;
   $("roomCode").textContent = snap.code ? `Room: ${snap.code}` : "";
 
-  // player list with ready state
   $("playerList").innerHTML = snap.players.map(p =>
-    `<li>${escapeHtml(p.name)} ${p.alive?'<span class="muted">(alive)</span>':'<span class="muted">(out)</span>'}${p.ready?' <span class="small" style="color:#9af5be">[Ready]</span>':''}${p.id===snap.hostId?' <strong>(host)</strong>':''}</li>`
+    `<li>${escapeHtml(p.name)} ${p.alive?'<span class="muted">(alive)</span>':'<span class="muted">(out)</span>'}${p.ready?' <span class="small" style="color:#15a05c">[Ready]</span>':''}${p.id===snap.hostId?' <strong>(host)</strong>':''}</li>`
   ).join("");
 
-  // host controls only for host
   $("hostControls").classList.toggle("hidden", !(snap.hostId && snap.hostId===myId));
 
-  // ready toggle visible only in LOBBY
   if (readyToggleEl) {
     readyToggleEl.closest(".row")?.classList.toggle("hidden", snap.phase !== "LOBBY");
   }
+
+  updateStartButton(snap);
 });
 
 socket.on("phase", (snap)=>{
   latestSnap = snap;
-  if(snap.phase==="LOBBY"){ show("lobby"); return; }
+
+  if(snap.phase==="LOBBY"){
+    show("lobby"); 
+    updateStartButton(snap);
+    return;
+  }
 
   if(snap.phase==="HINT" || snap.phase==="IN_PROGRESS"){
     const me = snap.players.find(p=>p.id===myId);
@@ -258,19 +281,19 @@ socket.on("turn", ({ turnId, turnName, seconds })=>{
   }, 1000);
 });
 
-$("submitHintBtn").onclick = ()=>{
+$("submitHintBtn")?.addEventListener("click", ()=>{
   const txt = $("hintInput").value.trim();
   $("hintInput").value = "";
   socket.emit("hint:submit", { code: roomCode, text: txt }, (res)=>{
     if(!res?.ok) alert(res?.error||"Could not submit");
   });
-};
+});
 
 socket.on("hint:update", ({ hints })=>{
   $("hintList").innerHTML = (hints||[]).map(h=>`<li><strong>${escapeHtml(h.name)}:</strong> ${escapeHtml(h.text)}</li>`).join("");
 });
 
-$("submitVoteBtn").onclick = ()=>{
+$("submitVoteBtn")?.addEventListener("click", ()=>{
   const picked = document.querySelector('input[name="voteTarget"]:checked');
   if(!picked) return alert("Pick someone or choose Skip");
   socket.emit("vote:cast", { code: roomCode, targetId: picked.value }, (res)=>{
@@ -281,17 +304,21 @@ $("submitVoteBtn").onclick = ()=>{
       document.querySelectorAll('input[name="voteTarget"]').forEach(r=>r.disabled=true);
     }
   });
-};
+});
 
 socket.on("vote:update", ({ votes })=>{
   $("voteStatus").textContent = `Votes cast: ${votes}`;
 });
 
 // Host buttons
-$("startGameBtn").onclick    = ()=> socket.emit("host:start",        { code: roomCode }, r => { if(!r?.ok) alert(r?.error||"Cannot start"); });
+startGameBtn?.addEventListener("click", () => {
+  socket.emit("host:start", { code: roomCode }, r => {
+    if(!r?.ok) alert(r?.error||"Cannot start");
+  });
+});
 $("forceNextBtn")?.addEventListener("click", ()=> socket.emit("host:forceNextTurn",{ code: roomCode }));
-$("forceRestartBtn").onclick = ()=> socket.emit("host:forceRestart",{ code: roomCode });
-$("playAgainBtn").onclick    = ()=> socket.emit("host:forceRestart",{ code: roomCode });
+$("forceRestartBtn")?.addEventListener("click", ()=> socket.emit("host:forceRestart",{ code: roomCode }));
+$("playAgainBtn")?.addEventListener("click", ()=> socket.emit("host:forceRestart",{ code: roomCode }));
 $("closeLobbyBtn")?.addEventListener("click", ()=> socket.emit("host:close",{ code: roomCode }, r => { if(!r?.ok) alert(r?.error||""); else window.location.reload(); }));
 
 // Player ready toggle (LOBBY)
@@ -299,7 +326,7 @@ readyToggleEl?.addEventListener("change", () => {
   socket.emit("player:ready", { code: roomCode, ready: !!readyToggleEl.checked });
 });
 
-// Host settings quick patch (optional small control group in HTML)
+// Host settings quick patch
 updateSettingsBtn?.addEventListener("click", ()=>{
   const patch = {};
   if (hostImpostorsEl?.value) patch.impostors = Number(hostImpostorsEl.value);
@@ -327,5 +354,3 @@ document.getElementById("mainMenuBtn")?.addEventListener("click", () => {
   try { socket.disconnect(); } catch (e) {}
   window.location.replace(window.location.origin);
 });
-
-function escapeHtml(s){ return (s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
