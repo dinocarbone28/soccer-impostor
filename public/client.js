@@ -189,7 +189,8 @@ function updateHostStartGating(snap){
 
   const canStart = isHost && inLobby && enoughPlayers && readyOk;
 
-  startBtn.disabled = !canStart;
+ startBtn.disabled = !canStart;
+startBtn.classList.toggle("glow", canStart);
   startReqMsg.textContent = canStart
     ? "Ready to go!"
     : `Need ≥3 players and ≥70% ready. Current: ${playerCount} players, ${readyCount} ready`;

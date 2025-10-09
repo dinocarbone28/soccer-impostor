@@ -354,3 +354,28 @@ footer a:hover{ border-bottom-color:var(--ink-100) }
 
 /* Maintain compatibility with legacy utility classes you had */
 .hidden{ display:none }
+/* === Screen fade transitions === */
+.screen {
+  opacity: 0;
+  transform: translateY(15px);
+  transition: opacity .4s ease, transform .4s ease;
+}
+.screen.active {
+  display: block;
+  opacity: 1;
+  transform: none;
+}
+
+/* === Button glow effect for start === */
+.btn.glow:not(:disabled){
+  box-shadow:0 0 18px rgba(255,233,104,.45), inset 0 0 6px rgba(255,233,104,.35);
+  animation:glowPulse 1.6s ease-in-out infinite;
+}
+@keyframes glowPulse{
+  0%,100%{filter:brightness(1)}
+  50%{filter:brightness(1.2)}
+}
+
+/* === Fade-in panel === */
+.fade-in{ animation:fadeIn .5s ease both }
+@keyframes fadeIn{ from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }

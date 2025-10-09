@@ -93,54 +93,57 @@
     <div class="game-tagline"><p>Online multiplayer • create, join, or match globally</p></div>
   </header>
 
-  <main class="container">
+ <main class="container">
 
-    <!-- MAIN MENU -->
-    <section id="screen-menu" class="screen active">
-      <div class="menu-hero">
-        <article class="tile" data-nav="screen-create">
-          <img src="/img/create-forward.png" alt="">
-          <div class="sub">Host a room with your rules</div>
-          <h3>Create Lobby</h3>
-        </article>
-        <article class="tile" data-nav="screen-join">
-          <img src="/img/join-midfielder.png" alt="">
-          <div class="sub">Have a 5-letter code? Jump in</div>
-          <h3>Join by Code</h3>
-        </article>
-        <article class="tile" data-nav="screen-global">
-          <img src="/img/match-keeper.png" alt="">
-          <div class="sub">Browse public lobbies worldwide</div>
-          <h3>Global Matchmaking</h3>
-        </article>
-      </div>
-    </section>
+  <!-- MAIN MENU -->
+  <section id="screen-menu" class="screen active fade-in">
+    <div class="menu-hero">
+      <article class="tile" data-nav="screen-create">
+        <img src="/img/create-forward.png" alt="">
+        <div class="sub">Forge your own match of deception</div>
+        <h3>Host a Lobby</h3>
+      </article>
+      <article class="tile" data-nav="screen-join">
+        <img src="/img/join-midfielder.png" alt="">
+        <div class="sub">Enter the code of fate</div>
+        <h3>Join Game</h3>
+      </article>
+      <article class="tile" data-nav="screen-global">
+        <img src="/img/match-keeper.png" alt="">
+        <div class="sub">Explore global arenas</div>
+        <h3>Public Lobbies</h3>
+      </article>
+    </div>
+  </section>
 
-    <!-- CREATE LOBBY -->
-    <section id="screen-create" class="screen">
-      <div class="row"><button class="btn" data-nav="screen-menu">← Back</button><h2>Create Lobby</h2></div>
-      <div class="stripe"></div>
-      <div class="panel">
-        <div class="row"><input id="hostName" class="input" placeholder="Your name"></div>
-        <div class="row two">
-          <div><label># of Impostors</label><input id="hostImpostors" class="input" type="number" min="1" value="1"></div>
-          <div><label>Hint Timer (sec)</label><input id="hostHintSec" class="input" type="number" min="5" value="30"></div>
-        </div>
-        <div class="row two">
-          <div><label><input id="hostPublic" type="checkbox" checked> Public lobby</label></div>
-          <div><label>Region</label>
-            <select id="hostRegion" class="input">
-              <option>GLOBAL</option><option>NA</option><option>SA</option><option>EU</option><option>AF</option><option>AS</option><option>OC</option>
-            </select>
-          </div>
-        </div>
-        <div class="row two">
-          <div><label>Max Players (3–10)</label><input id="hostMaxPlayers" class="input" type="number" min="3" max="10" value="10"></div>
-          <div></div>
-        </div>
-        <button id="createBtn" class="btn primary">Create Room</button>
+ <!-- CREATE LOBBY -->
+  <section id="screen-create" class="screen fade-in">
+    <div class="row">
+      <button class="btn" data-nav="screen-menu">← Back</button>
+      <h2>Create Lobby</h2>
+    </div>
+    <div class="stripe"></div>
+    <div class="panel">
+      <input id="hostName" class="input" placeholder="Your alias">
+      <div class="row two">
+        <div><label># of Impostors</label><input id="hostImpostors" class="input" type="number" min="1" value="1"></div>
+        <div><label>Hint Timer (sec)</label><input id="hostHintSec" class="input" type="number" min="5" value="30"></div>
       </div>
-    </section>
+      <div class="row two">
+        <div><label><input id="hostPublic" type="checkbox" checked> Public lobby</label></div>
+        <div><label>Region</label>
+          <select id="hostRegion" class="input">
+            <option>GLOBAL</option><option>NA</option><option>SA</option><option>EU</option><option>AF</option><option>AS</option><option>OC</option>
+          </select>
+        </div>
+      </div>
+      <div class="row two">
+        <div><label>Max Players</label><input id="hostMaxPlayers" class="input" type="number" min="3" max="10" value="10"></div>
+        <div></div>
+      </div>
+      <button id="createBtn" class="btn primary pulse">Create Arena</button>
+    </div>
+  </section>
 
     <!-- JOIN BY CODE -->
     <section id="screen-join" class="screen">
@@ -236,8 +239,28 @@
         <button id="playAgainBtn" class="btn primary">Play Again (Host)</button>
       </div>
     </section>
-  </main>
-
+  <!-- LOBBY -->
+  <section id="lobby" class="view fade-in">
+    <div class="panel">
+      <h2>Lobby</h2>
+      <p class="muted">Invite allies… or impostors.</p>
+      <ul id="playerList" class="list"></ul>
+    </div>
+    <div class="panel row space-between">
+      <label class="small"><input id="readyToggle" type="checkbox"> I’m ready</label>
+      <div id="lobbyStatus" class="muted small"></div>
+    </div>
+    <div id="hostControls" class="panel hidden">
+      <h3>Host Commands</h3>
+      <div class="row wrap">
+        <button id="startGameBtn" class="btn primary glow" disabled>Commence Match</button>
+        <button id="forceRestartBtn" class="btn danger">Restart</button>
+        <button id="mainMenuBtn" class="btn">Exit</button>
+      </div>
+      <p id="startReqMsg" class="small muted"></p>
+    </div>
+  </section>
+</main>
   <footer class="muted small" style="text-align:center; margin:32px 0; opacity:.85">
     <a href="/privacy.html">Privacy</a> ·
     <a href="/contact.html">Contact</a> ·
@@ -250,11 +273,21 @@
 
   <!-- SPA nav (visual only; doesn’t touch game logic) -->
   <script>
-    (function(){
-      const screens=["screen-menu","screen-create","screen-join","screen-global"];
-      function activate(id){ screens.forEach(s=>{ const el=document.getElementById(s); if(el) el.classList.toggle("active", s===id); }); }
-      document.addEventListener("click", e => { const t=e.target.closest("[data-nav]"); if(t) activate(t.getAttribute("data-nav")); });
-    })();
-  </script>
+  // Enhanced SPA transitions
+  (function(){
+    const screens=["screen-menu","screen-create","screen-join","screen-global"];
+    function activate(id){
+      screens.forEach(s=>{
+        const el=document.getElementById(s);
+        if(el) el.classList.toggle("active", s===id);
+      });
+      window.scrollTo({ top:0, behavior:"smooth" });
+    }
+    document.addEventListener("click", e=>{
+      const t=e.target.closest("[data-nav]");
+      if(t) activate(t.getAttribute("data-nav"));
+    });
+  })();
+</script>
 </body>
 </html>
