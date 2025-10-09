@@ -1,41 +1,71 @@
-// client.js — Soccer Impostor (v1.4.0) — adds SKIP vote, vote-screen hints, robust replay
+// client.js — Soccer Impostor (v1.6.0)
+// Adds: public/private lobby, region/filtering, max players, ready toggle,
+// host settings, in-progress lock, rejoin, better lobby browser.
 
 const socket = io();
 const $ = id => document.getElementById(id);
-// Global lobby
-const lobbyListEl = document.getElementById("lobbyList");
-const lobbyRefreshBtn = document.getElementById("lobbyRefreshBtn");
 
-// Vote timer + chat
-const voteCountdownEl = document.getElementById("voteCountdown");
-const chatLogEl = document.getElementById("chatLog");
-const chatInputEl = document.getElementById("chatInput");
-const chatSendBtn = document.getElementById("chatSendBtn");
+// ----- DOM refs (existing + new) -----
+const lobbyListEl = $("lobbyList");
+const lobbyRefreshBtn = $("lobbyRefreshBtn");
+const regionFilterEl = $("lobbyRegionFilter");     // NEW (optional in HTML)
+const onlyOpenFilterEl = $("lobbyOnlyOpen");       // NEW (optional in HTML)
 
-// Local state
+const voteCountdownEl = $("voteCountdown");
+const chatLogEl = $("chatLog");
+const chatInputEl = $("chatInput");
+const chatSendBtn = $("chatSendBtn");
+
+// Start screen inputs (existing)
+const hostNameEl = $("hostName");
+const hostImpostorsEl = $("hostImpostors");
+const hostHintSecEl = $("hostHintSec");
+// NEW host controls
+const hostPublicEl = $("hostPublic");      // checkbox
+const hostRegionEl = $("hostRegion");      // select
+const hostMaxPlayersEl = $("hostMaxPlayers"); // number
+
+// Lobby view
+const readyToggleEl = $("readyToggle");     // NEW checkbox for players
+const updateSettingsBtn = $("updateSettingsBtn"); // NEW button for host (optional)
+
+// Game/phase globals
 let voteTimerInt = null;
-let serverOffsetMs = 0; // serverNow - clientNow (computed on vote:start)
+let serverOffsetMs = 0;
+let myId = null;
+let roomCode = null;
+let mySecret = null;
+let currentTurnId = null;
+let latestSnap = null;
+
+const screens = { start:$("start"), lobby:$("lobby"), hint:$("hint"), vote:$("vote"), over:$("over") };
+function show(name){ for(const k of Object.keys(screens)) screens[k].classList.remove("active"); screens[name].classList.add("active"); }
+
+// ----- Lobby browser rendering -----
 function renderLobbyList(items) {
   if (!lobbyListEl) return;
   lobbyListEl.innerHTML = "";
   if (!items || !items.length) {
     const li = document.createElement("li");
     li.className = "muted";
-    li.textContent = "No rooms yet. Host a room or click Refresh.";
+    li.textContent = "No public rooms. Click Create or Refresh.";
     lobbyListEl.appendChild(li);
     return;
   }
   items.forEach(it => {
+    const pct = Math.min(100, Math.round((it.playerCount / it.maxPlayers) * 100));
     const li = document.createElement("li");
     li.innerHTML = `
-      <div class="row space-between">
+      <div class="row space-between" style="align-items:center">
         <div>
-          <strong>${it.code}</strong>
-          <span class="muted small">• Host: ${it.hostName || "?"}</span>
-          <span class="muted small">• Players: ${it.playerCount}/${it.maxPlayers || 10}</span>
-          <span class="muted small">• ${it.status}</span>
+          <strong>#${it.code}</strong>
+          <span class="muted small">• ${it.playerCount}/${it.maxPlayers} • ${it.status} • ${it.region}</span>
+          <div class="small muted" title="updated">${new Date(it.updatedAt).toLocaleTimeString()}</div>
         </div>
-        <div><button class="btn small joinFromListBtn" data-code="${it.code}">Join</button></div>
+        <div class="row" style="gap:.5rem">
+          <div class="small muted" style="min-width:120px">[${"█".repeat(Math.round(pct/10))}${"░".repeat(10-Math.round(pct/10))}]</div>
+          <button class="btn small joinFromListBtn" data-code="${it.code}" ${it.status!=="WAITING"?"disabled":""}>Join</button>
+        </div>
       </div>
     `;
     lobbyListEl.appendChild(li);
@@ -44,99 +74,28 @@ function renderLobbyList(items) {
   lobbyListEl.querySelectorAll(".joinFromListBtn").forEach(btn => {
     btn.addEventListener("click", () => {
       const code = btn.getAttribute("data-code");
-      const name = document.getElementById("joinName")?.value?.trim() || "Player";
+      const name = $("joinName")?.value?.trim() || "Player";
       socket.emit("player:join", { code, name }, (res) => {
         if (!res?.ok) return alert(res?.error || "Could not join");
-        // switch to lobby view (you already have code to do this on 'lobby:update')
+        roomCode = code;
+        $("roomCode").textContent = `Room: ${roomCode}`;
+        show("lobby");
       });
     });
   });
 }
-if (lobbyRefreshBtn) {
-  lobbyRefreshBtn.addEventListener("click", () => {
-    socket.emit("lobby:list", (items) => renderLobbyList(items));
-  });
-}
 
-// On entering START view, load once and start watch:
-socket.emit("lobby:list", (items) => renderLobbyList(items));
-socket.emit("lobby:watch");
-socket.on("lobby:changed", (items) => renderLobbyList(items));
-function startVoteCountdown(endsAtMs) {
-  clearInterval(voteTimerInt);
-  voteTimerInt = setInterval(() => {
-    const now = Date.now() + serverOffsetMs;
-    let left = Math.max(0, Math.floor((endsAtMs - now) / 1000));
-    if (voteCountdownEl) voteCountdownEl.textContent = `${left}s`;
-    if (left <= 0) clearInterval(voteTimerInt);
-  }, 250);
-}
-// Server announces vote window
-socket.on("vote:start", ({ endsAt, serverNow, seconds }) => {
-  // compute offset once per announcement
-  serverOffsetMs = (serverNow || Date.now()) - Date.now();
-  startVoteCountdown(endsAt);
-});
-socket.on("phase", (snap) => {
-  // ... your existing phase handling ...
-  if (snap.phase !== "VOTE") {
-    clearInterval(voteTimerInt);
-    if (voteCountdownEl) voteCountdownEl.textContent = "—";
-  }
-});
-function appendChatLine(name, text) {
-  if (!chatLogEl) return;
-  const line = document.createElement("div");
-  line.className = "line";
-  line.innerHTML = `<span class="name">${name}:</span> <span>${text}</span>`;
-  chatLogEl.appendChild(line);
-  chatLogEl.scrollTop = chatLogEl.scrollHeight;
-}
-
-if (chatSendBtn && chatInputEl) {
-  chatSendBtn.addEventListener("click", () => {
-    const text = chatInputEl.value.trim();
-    if (!text) return;
-    const code = window.currentRoomCode || document.getElementById("roomCode")?.textContent?.trim();
-    socket.emit("chat:send", { code, text }, (res) => {
-      if (!res?.ok && res?.error) alert(res.error);
-    });
-    chatInputEl.value = "";
-  });
-  chatInputEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") chatSendBtn.click();
-  });
-}
-
-// Receive full history and new messages
-socket.on("chat:load", (msgs) => {
-  if (!chatLogEl) return;
-  chatLogEl.innerHTML = "";
-  (msgs || []).forEach(m => appendChatLine(m.name, m.text));
-});
-socket.on("chat:new", (m) => appendChatLine(m.name, m.text));
-let myId = null;
-let roomCode = null;
-let mySecret = null;
-let currentTurnId = null;
-let currentTurnName = "—";
-let hintTimerHandle = null;
-let latestSnap = null;
-
-// screen manager with smooth transitions
-const screens = { start:$("start"), lobby:$("lobby"), hint:$("hint"), vote:$("vote"), over:$("over") };
-function show(name){
-  for(const k of Object.keys(screens)) screens[k].classList.remove("active");
-  screens[name].classList.add("active");
-}
-
-// --- Start screen handlers ---
+// ----- Start screen actions -----
 $("createBtn").onclick = () => {
-  const name = $("hostName").value.trim();
-  const impostors = Number($("hostImpostors").value || 1);
-  const hintSeconds = Number($("hostHintSec").value || 30);
-  if(!name) return alert("Enter your name");
-  socket.emit("host:create", { name, impostors, hintSeconds }, (res)=>{
+  const name = hostNameEl.value.trim();
+  const impostors = Number(hostImpostorsEl.value || 1);
+  const hintSeconds = Number(hostHintSecEl.value || 30);
+  const isPublic = !!hostPublicEl?.checked;
+  const region = hostRegionEl?.value || "GLOBAL";
+  const maxPlayers = Number(hostMaxPlayersEl?.value || 10);
+
+  if (!name) return alert("Enter your name");
+  socket.emit("host:create", { name, impostors, hintSeconds, isPublic, region, maxPlayers }, (res)=>{
     if(!res?.ok) return alert(res?.error||"Could not create");
     roomCode = res.code;
     $("roomCode").textContent = `Room: ${roomCode}`;
@@ -156,30 +115,90 @@ $("joinBtn").onclick = () => {
   });
 };
 
-// --- Socket lifecycle ---
+// ----- Global lobby feed -----
+function requestLobbyList(){
+  const filter = {
+    region: regionFilterEl?.value || null,
+    onlyOpen: !!onlyOpenFilterEl?.checked
+  };
+  socket.emit("lobby:list", filter, (items) => renderLobbyList(items));
+}
+if (lobbyRefreshBtn) lobbyRefreshBtn.addEventListener("click", requestLobbyList);
+regionFilterEl?.addEventListener("change", () => socket.emit("lobby:watch", { region: regionFilterEl.value, onlyOpen: !!onlyOpenFilterEl?.checked }));
+onlyOpenFilterEl?.addEventListener("change", () => socket.emit("lobby:watch", { region: regionFilterEl?.value, onlyOpen: !!onlyOpenFilterEl?.checked }));
+
+socket.emit("lobby:list", {}, (items) => renderLobbyList(items));
+socket.emit("lobby:watch", {});
+socket.on("lobby:changed", (items) => renderLobbyList(items));
+
+// ----- Vote timer -----
+function startVoteCountdown(endsAtMs) {
+  clearInterval(voteTimerInt);
+  voteTimerInt = setInterval(() => {
+    const now = Date.now() + serverOffsetMs;
+    let left = Math.max(0, Math.floor((endsAtMs - now) / 1000));
+    if (voteCountdownEl) voteCountdownEl.textContent = `${left}s`;
+    if (left <= 0) clearInterval(voteTimerInt);
+  }, 250);
+}
+socket.on("vote:start", ({ endsAt, serverNow, seconds }) => {
+  serverOffsetMs = (serverNow || Date.now()) - Date.now();
+  startVoteCountdown(endsAt);
+});
+
+// ----- Chat -----
+function appendChatLine(name, text) {
+  if (!chatLogEl) return;
+  const line = document.createElement("div");
+  line.className = "line";
+  line.innerHTML = `<span class="name">${name}:</span> <span>${text}</span>`;
+  chatLogEl.appendChild(line);
+  chatLogEl.scrollTop = chatLogEl.scrollHeight;
+}
+if (chatSendBtn && chatInputEl) {
+  chatSendBtn.addEventListener("click", () => {
+    const text = chatInputEl.value.trim();
+    if (!text) return;
+    socket.emit("chat:send", { code: roomCode, text }, (res) => {
+      if (!res?.ok && res?.error) alert(res.error);
+    });
+    chatInputEl.value = "";
+  });
+  chatInputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") chatSendBtn.click(); });
+}
+socket.on("chat:new", (m) => appendChatLine(m.name, m.text));
+
+// ----- Phase/snap handling -----
 socket.on("connect", ()=>{ myId = socket.id; });
 
 socket.on("lobby:update", (snap)=>{
   latestSnap = snap;
   $("roomCode").textContent = snap.code ? `Room: ${snap.code}` : "";
+
+  // player list with ready state
   $("playerList").innerHTML = snap.players.map(p =>
-    `<li>${escapeHtml(p.name)} ${p.alive?'<span class="muted">(alive)</span>':'<span class="muted">(out)</span>'}${p.id===snap.hostId?' <strong>(host)</strong>':''}</li>`
+    `<li>${escapeHtml(p.name)} ${p.alive?'<span class="muted">(alive)</span>':'<span class="muted">(out)</span>'}${p.ready?' <span class="small" style="color:#9af5be">[Ready]</span>':''}${p.id===snap.hostId?' <strong>(host)</strong>':''}</li>`
   ).join("");
+
+  // host controls only for host
   $("hostControls").classList.toggle("hidden", !(snap.hostId && snap.hostId===myId));
+
+  // ready toggle visible only in LOBBY
+  if (readyToggleEl) {
+    readyToggleEl.closest(".row")?.classList.toggle("hidden", snap.phase !== "LOBBY");
+  }
 });
 
 socket.on("phase", (snap)=>{
   latestSnap = snap;
-  mySecret = null; // will be re-sent privately to innocents via 'secret' event
-
   if(snap.phase==="LOBBY"){ show("lobby"); return; }
 
-  if(snap.phase==="HINT"){
+  if(snap.phase==="HINT" || snap.phase==="IN_PROGRESS"){
     const me = snap.players.find(p=>p.id===myId);
     $("roleBanner").textContent = me?.role==="impostor" ? "You are IMPOSTOR. Try to blend in." : "You are INNOCENT. Watch your wording.";
     $("secretBox").classList.add("hidden");
     $("secretName").textContent = "";
-    $("hintList").innerHTML = snap.hints.map(h=>`<li><strong>${escapeHtml(h.name)}:</strong> ${escapeHtml(h.text)}</li>`).join("");
+    $("hintList").innerHTML = (snap.hints||[]).map(h=>`<li><strong>${escapeHtml(h.name)}:</strong> ${escapeHtml(h.text)}</li>`).join("");
     $("hintInputRow").style.display = (currentTurnId===myId) ? "flex" : "none";
     show("hint");
     return;
@@ -187,19 +206,15 @@ socket.on("phase", (snap)=>{
 
   if(snap.phase==="VOTE"){
     const alive = snap.players.filter(p=>p.alive);
-    // render hints for quick reference
-    $("voteHints").innerHTML = snap.hints.map(h=>`<li><strong>${escapeHtml(h.name)}:</strong> ${escapeHtml(h.text)}</li>`).join("");
-
+    $("voteHints").innerHTML = (snap.hints||[]).map(h=>`<li><strong>${escapeHtml(h.name)}:</strong> ${escapeHtml(h.text)}</li>`).join("");
     $("voteList").innerHTML = alive.map(p => `
       <label class="voteCard">
         <span>${escapeHtml(p.name)}</span>
         <input type="radio" name="voteTarget" value="${p.id}">
       </label>
     `).join("");
-
-    $("voteStatus").textContent = "Cast your vote. Majority required; no majority or Skip majority = next hint round.";
+    $("voteStatus").textContent = "Cast your vote. Majority required; Skip = next hint round.";
     $("submitVoteBtn").disabled=false;
-    // keep the separate SKIP radio that exists in HTML
     show("vote"); return;
   }
 
@@ -211,10 +226,10 @@ socket.on("phase", (snap)=>{
   }
 });
 
-// Secret comes privately only to innocents
+// Secret DM to innocents
 socket.on("secret", ({ secretPlayer })=>{
   mySecret = secretPlayer || null;
-  if(latestSnap?.phase === "HINT"){
+  if(latestSnap && (latestSnap.phase === "HINT" || latestSnap.phase === "IN_PROGRESS")){
     const me = latestSnap.players.find(p=>p.id===myId);
     if(me?.role === "innocent" && mySecret){
       $("secretBox").classList.remove("hidden");
@@ -223,20 +238,18 @@ socket.on("secret", ({ secretPlayer })=>{
   }
 });
 
-// Turn info (includes player name)
 socket.on("turn", ({ turnId, turnName, seconds })=>{
   currentTurnId = turnId;
-  currentTurnName = turnName || "—";
-  $("turnName").textContent = currentTurnName;
+  $("turnName").textContent = turnName || "—";
   let left = seconds || 30;
   $("turnTimer").textContent = `${left}s`;
   $("hintInputRow").style.display = (turnId===myId) ? "flex" : "none";
-
-  if(hintTimerHandle) clearInterval(hintTimerHandle);
-  hintTimerHandle = setInterval(()=>{
+  let handle = window.__hintTimer;
+  if (handle) clearInterval(handle);
+  window.__hintTimer = setInterval(()=>{
     left -= 1;
     $("turnTimer").textContent = `${Math.max(0,left)}s`;
-    if(left <= 0){ clearInterval(hintTimerHandle); }
+    if(left <= 0){ clearInterval(window.__hintTimer); }
   }, 1000);
 });
 
@@ -249,7 +262,7 @@ $("submitHintBtn").onclick = ()=>{
 };
 
 socket.on("hint:update", ({ hints })=>{
-  $("hintList").innerHTML = hints.map(h=>`<li><strong>${escapeHtml(h.name)}:</strong> ${escapeHtml(h.text)}</li>`).join("");
+  $("hintList").innerHTML = (hints||[]).map(h=>`<li><strong>${escapeHtml(h.name)}:</strong> ${escapeHtml(h.text)}</li>`).join("");
 });
 
 $("submitVoteBtn").onclick = ()=>{
@@ -269,19 +282,45 @@ socket.on("vote:update", ({ votes })=>{
   $("voteStatus").textContent = `Votes cast: ${votes}`;
 });
 
-// host buttons (host can act even if eliminated)
-$("startGameBtn").onclick  = ()=> socket.emit("host:start",        { code: roomCode }, r => { if(!r?.ok) alert(r?.error||"Cannot start"); });
-$("forceNextBtn").onclick  = ()=> socket.emit("host:forceNextTurn",{ code: roomCode });
-$("forceRestartBtn").onclick = ()=> socket.emit("host:forceRestart",{ code: roomCode }); // randomize roles & secret
-$("playAgainBtn").onclick  = ()=> socket.emit("host:forceRestart",{ code: roomCode });
-// MAIN MENU BUTTON — return to home screen
-document.getElementById("mainMenuBtn")?.addEventListener("click", () => {
-  try {
-    socket.disconnect(); // end the current session
-  } catch (e) {}
+// Host buttons
+$("startGameBtn").onclick    = ()=> socket.emit("host:start",        { code: roomCode }, r => { if(!r?.ok) alert(r?.error||"Cannot start"); });
+$("forceNextBtn")?.addEventListener("click", ()=> socket.emit("host:forceNextTurn",{ code: roomCode }));
+$("forceRestartBtn").onclick = ()=> socket.emit("host:forceRestart",{ code: roomCode });
+$("playAgainBtn").onclick    = ()=> socket.emit("host:forceRestart",{ code: roomCode });
+$("closeLobbyBtn")?.addEventListener("click", ()=> socket.emit("host:close",{ code: roomCode }, r => { if(!r?.ok) alert(r?.error||""); else window.location.reload(); }));
 
-  // force reload from scratch to show the main screen
+// Player ready toggle (LOBBY)
+readyToggleEl?.addEventListener("change", () => {
+  socket.emit("player:ready", { code: roomCode, ready: !!readyToggleEl.checked });
+});
+
+// Host settings quick patch (optional small control group in HTML)
+updateSettingsBtn?.addEventListener("click", ()=>{
+  const patch = {};
+  if (hostImpostorsEl?.value) patch.impostors = Number(hostImpostorsEl.value);
+  if (hostHintSecEl?.value)   patch.hintSeconds = Number(hostHintSecEl.value);
+  if (hostMaxPlayersEl?.value)patch.maxPlayers = Number(hostMaxPlayersEl.value);
+  if (hostRegionEl?.value)    patch.region = hostRegionEl.value;
+  if (hostPublicEl)           patch.public = !!hostPublicEl.checked;
+  socket.emit("host:updateSettings", { code: roomCode, patch }, (res)=>{ if(!res?.ok) alert(res?.error||""); });
+});
+
+// Rejoin helper (call after refresh if you kept the name+code)
+window.tryRejoin = function(name, code){
+  if (!name || !code) return;
+  socket.emit("player:rejoin", { name, code }, (res)=>{
+    if (res?.ok) {
+      roomCode = code;
+      $("roomCode").textContent = `Room: ${roomCode}`;
+      show("lobby");
+    }
+  });
+};
+
+// MAIN MENU BUTTON
+document.getElementById("mainMenuBtn")?.addEventListener("click", () => {
+  try { socket.disconnect(); } catch (e) {}
   window.location.replace(window.location.origin);
 });
-// helpers
+
 function escapeHtml(s){ return (s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }

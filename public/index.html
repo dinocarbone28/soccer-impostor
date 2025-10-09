@@ -4,14 +4,13 @@
   <meta charset="utf-8"/>
   <meta name="google-site-verification" content="google1e1def7a720686df.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Soccer Impostor</title>
-<title>Soccer Impostor — Free Online Multiplayer Social Deduction Game</title>
-<meta name="description" content="Play Soccer Impostor — a fast, free online multiplayer game where players drop hints, bluff, and vote out the impostor! Create rooms, invite friends, and play globally.">
-<meta name="keywords" content="soccer impostor, multiplayer game, impostor game, play online, free games, social deduction, among us soccer">
+  <title>Soccer Impostor — Free Online Multiplayer Social Deduction Game</title>
+
+  <meta name="description" content="Play Soccer Impostor — a fast, free online multiplayer game where players drop hints, bluff, and vote out the impostor! Create rooms, invite friends, and play globally.">
+  <meta name="keywords" content="soccer impostor, multiplayer game, impostor game, play online, free games, social deduction, among us soccer">
 
   <!-- Basic SEO -->
   <link rel="canonical" href="https://soccer-impostor.onrender.com/">
-  <meta name="description" content="Play Soccer Impostor — a free, real-time multiplayer social-deduction game. Create or join rooms, drop subtle hints about the secret player, and vote out the impostor!">
   <meta name="robots" content="index, follow">
   <meta name="author" content="Dino Carbone">
 
@@ -20,7 +19,7 @@
   <meta property="og:description" content="Find the impostor before time runs out. Real-time hints, voting, and global rooms.">
   <meta property="og:url" content="https://soccer-impostor.onrender.com/">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="/og-image.png">  <!-- add this file later if you want -->
+  <meta property="og:image" content="/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Soccer Impostor — Multiplayer Social Deduction">
   <meta name="twitter:description" content="Find the impostor before time runs out. Join a room and play now.">
@@ -31,19 +30,19 @@
   <link rel="icon" href="/favicon.ico">
 
   <!-- Performance hints -->
-  <link rel="preload" href="/styles.css?v=1.4.0" as="style">
+  <link rel="preload" href="/styles.css?v=1.6.0" as="style">
   <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>
 
   <!-- Optional backup verification (leave or replace YOUR_CODE_HERE) -->
   <meta name="google-site-verification" content="YOUR_CODE_HERE">
 
   <!-- Soccer-styled typefaces -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
 
   <!-- Styles -->
-  <link rel="stylesheet" href="styles.css?v=1.4.0">
+  <link rel="stylesheet" href="styles.css?v=1.6.0">
 
   <!-- AdSense -->
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4641989892507140" crossorigin="anonymous"></script>
@@ -68,8 +67,8 @@
     <div class="brand">⚽ Soccer Impostor</div>
     <div class="room" id="roomCode"></div>
     <div class="game-tagline">
-  <p>🎮 A free online multiplayer game where players bluff, hint, and vote to find the impostor!</p>
-</div>
+      <p>🎮 A free online multiplayer game where players bluff, hint, and vote to find the impostor!</p>
+    </div>
   </header>
 
   <main class="container">
@@ -78,10 +77,40 @@
       <div class="panel">
         <h2>Create Room (Host)</h2>
         <div class="row"><input id="hostName" class="input" placeholder="Your name"></div>
+
         <div class="row two">
-          <div><label># of Impostors</label><input id="hostImpostors" class="input" type="number" min="1" value="1"></div>
-          <div><label>Hint Timer (sec)</label><input id="hostHintSec" class="input" type="number" min="5" value="30"></div>
+          <div>
+            <label># of Impostors</label>
+            <input id="hostImpostors" class="input" type="number" min="1" value="1">
+          </div>
+          <div>
+            <label>Hint Timer (sec)</label>
+            <input id="hostHintSec" class="input" type="number" min="5" value="30">
+          </div>
         </div>
+
+        <!-- NEW: Public/Region/Capacity -->
+        <div class="row two">
+          <div>
+            <label>Public Lobby</label><br>
+            <input id="hostPublic" type="checkbox" checked>
+          </div>
+          <div>
+            <label>Region</label>
+            <select id="hostRegion" class="input">
+              <option>GLOBAL</option><option>NA</option><option>SA</option>
+              <option>EU</option><option>AF</option><option>AS</option><option>OC</option>
+            </select>
+          </div>
+        </div>
+        <div class="row two">
+          <div>
+            <label>Max Players (3–10)</label>
+            <input id="hostMaxPlayers" class="input" type="number" min="3" max="10" value="10">
+          </div>
+          <div></div>
+        </div>
+
         <button id="createBtn" class="btn primary">Create Room</button>
       </div>
 
@@ -92,16 +121,27 @@
         <button id="joinBtn" class="btn">Join</button>
       </div>
     </section>
-    <!-- GLOBAL LOBBY BROWSER -->
-<div class="panel">
-  <h2>Find an Opponent (Global)</h2>
-  <div class="row wrap" style="gap:.5rem;margin:.5rem 0">
-    <button id="lobbyRefreshBtn" class="btn">Refresh</button>
-    <label class="muted small">Auto-updates when new rooms appear.</label>
-  </div>
-  <ul id="lobbyList" class="list"></ul>
-</div>
 
+    <!-- GLOBAL LOBBY BROWSER -->
+    <div class="panel">
+      <h2>Find an Opponent (Global)</h2>
+
+      <!-- NEW: Filters for region + only open -->
+      <div class="row wrap" style="gap:.5rem;margin:.5rem 0">
+        <button id="lobbyRefreshBtn" class="btn">Refresh</button>
+        <select id="lobbyRegionFilter" class="input" style="max-width:180px">
+          <option value="">All Regions</option>
+          <option>GLOBAL</option><option>NA</option><option>SA</option>
+          <option>EU</option><option>AF</option><option>AS</option><option>OC</option>
+        </select>
+        <label class="small muted">
+          <input id="lobbyOnlyOpen" type="checkbox" style="margin-right:.4rem">Only open lobbies
+        </label>
+        <label class="muted small">Auto-updates when new rooms appear.</label>
+      </div>
+
+      <ul id="lobbyList" class="list"></ul>
+    </div>
 
     <!-- Lobby -->
     <section id="lobby" class="view">
@@ -110,12 +150,29 @@
         <p class="muted">Share the room code with friends.</p>
         <ul id="playerList" class="list"></ul>
       </div>
+
+      <!-- NEW: Player ready toggle -->
+      <div class="panel">
+        <div class="row">
+          <label class="small">
+            <input id="readyToggle" type="checkbox" style="margin-right:.5rem">I’m Ready
+          </label>
+        </div>
+      </div>
+
+      <!-- Host controls (existing) -->
       <div id="hostControls" class="panel hidden">
         <h3>Host Controls</h3>
         <div class="row wrap">
           <button id="startGameBtn" class="btn primary">Start Game</button>
           <button id="forceRestartBtn" class="btn danger">Play Again (Randomize)</button>
-<button id="mainMenuBtn" class="btn">Main Menu</button>
+          <button id="forceNextBtn" class="btn">Force Next Turn</button>
+          <button id="mainMenuBtn" class="btn">Main Menu</button>
+        </div>
+
+        <!-- NEW: optional quick settings patch button -->
+        <div class="row wrap" style="margin-top:.5rem">
+          <button id="updateSettingsBtn" class="btn">Update Settings (Host)</button>
         </div>
       </div>
     </section>
@@ -146,23 +203,24 @@
     <section id="vote" class="view">
       <div class="panel">
         <h2>Vote the Impostor</h2>
-      <!-- VOTE TOP BAR -->
-<div class="row space-between" style="align-items:center;margin-bottom:.75rem">
-  <div class="muted small">Voting ends in <strong id="voteCountdown">—</strong></div>
-  <div class="muted small">Round Hints &nbsp;↓</div>
-</div>
-<!-- Chat during voting -->
-<div id="voteChat" class="subpanel" style="margin-top:.75rem">
-  <h3>Chat</h3>
-  <div id="chatLog" class="chatLog"></div>
-  <div class="row" style="gap:.5rem;margin-top:.5rem">
-    <input id="chatInput" class="input" placeholder="Type a message…" maxlength="200">
-    <button id="chatSendBtn" class="btn">Send</button>
-  </div>
-</div>
 
+        <!-- VOTE TOP BAR -->
+        <div class="row space-between" style="align-items:center;margin-bottom:.75rem">
+          <div class="muted small">Voting ends in <strong id="voteCountdown">—</strong></div>
+          <div class="muted small">Round Hints &nbsp;↓</div>
+        </div>
 
-        <!-- NEW: show current round hints on the voting screen -->
+        <!-- Chat during voting -->
+        <div id="voteChat" class="subpanel" style="margin-top:.75rem">
+          <h3>Chat</h3>
+          <div id="chatLog" class="chatLog"></div>
+          <div class="row" style="gap:.5rem;margin-top:.5rem">
+            <input id="chatInput" class="input" placeholder="Type a message…" maxlength="200">
+            <button id="chatSendBtn" class="btn">Send</button>
+          </div>
+        </div>
+
+        <!-- Round hints -->
         <div class="subpanel">
           <h3>Round Hints</h3>
           <ul id="voteHints" class="list"></ul>
@@ -170,7 +228,7 @@
 
         <div id="voteList" class="voteList"></div>
 
-        <!-- NEW: Skip option -->
+        <!-- Skip option -->
         <label class="voteCard">
           <span>Skip Vote (no elimination)</span>
           <input type="radio" name="voteTarget" value="SKIP">
@@ -198,8 +256,8 @@
     <a href="/">Home</a>
   </footer>
 
-  <!-- Scripts (same files, non-blocking) -->
+  <!-- Scripts -->
   <script src="/socket.io/socket.io.js" defer></script>
-  <script src="client.js?v=1.4.0" defer></script>
+  <script src="client.js?v=1.6.0" defer></script>
 </body>
 </html>
